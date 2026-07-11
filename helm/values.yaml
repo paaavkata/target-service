@@ -1,0 +1,49 @@
+parent:
+  environment: dev
+  image:
+    registry: registry.internal.cloudfusion.tech
+    app: scantinel/app
+    service: target-service
+    tag: latest
+    pullPolicy: Always
+    pullSecret: zot-pull-creds
+  service:
+    port: 80
+    type: ClusterIP
+  deployment:
+    replicas: 1
+  container:
+    port: 8080
+    host: 127.0.0.1
+  # External routes are exposed under /api/target (prefix stripped by Traefik).
+  # Internal routes (/internal/v1/...) are cluster-only via NetworkPolicy — not
+  # exposed via this ingress path.
+  ingress:
+    path: /api/target
+    stripPrefix: true
+  host: scantinel.ai
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  envVars:
+    - name: LOG_LEVEL
+      value: info
+    - name: LOG_FORMAT
+      value: json
+    - name: APP_PORT
+      value: "8080"
+    - name: APP_ID
+      value: scantinel
+    - name: KAFKA_CLIENT_ID
+      value: target-service
+    - name: KAFKA_BOOTSTRAP_SERVER
+      # Override per environment via gitops valuesObject.
+      value: kafka-bootstrap.platform-dev:9092
+  secretEnvVars:
+    - name: DB_URI
+      # PGO-created secret: scantinel-<env>-pguser-target-service-user
+      secretName: scantinel-dev-pguser-target-service-user
+      secretKey: uri

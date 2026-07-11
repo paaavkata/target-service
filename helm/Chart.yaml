@@ -1,0 +1,17 @@
+apiVersion: v2
+name: target-service
+description: "Scantinel target-service — ownership verification and authorization scope gate. THE SAFETY BOUNDARY: no intrusive scan phase proceeds without this service's assertion."
+type: application
+version: 0.1.0
+appVersion: "1.0"
+sources:
+- https://github.com/paaavkata/target-service
+maintainers:
+- name: Pavel Damyanov
+  url: https://github.com/paaavkata
+
+dependencies:
+- name: service-deployment-helm-chart
+  alias: parent
+  version: "0.1.0"
+  repository: "file://../../../../service-deployment-helm-chart/chart"

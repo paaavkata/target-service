@@ -1,0 +1,50 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: target-service-dev
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '3'   # deploys after scan-service (wave 2)
+spec:
+  project: platform-dev
+  source:
+    repoURL: registry.internal.cloudfusion.tech
+    chart: charts/target-service
+    targetRevision: 0.1.0-bootstrap20260711
+    helm:
+      valuesObject:
+        parent:
+          image:
+            tag: bootstrap-20260711
+          environment: dev
+          host: dev.scantinel.ai
+          ingress:
+            path: /api/target
+            stripPrefix: true
+          envVars:
+          - name: LOG_LEVEL
+            value: info
+          - name: LOG_FORMAT
+            value: json
+          - name: APP_PORT
+            value: "8080"
+          - name: APP_ID
+            value: scantinel
+          - name: KAFKA_CLIENT_ID
+            value: target-service
+          - name: KAFKA_BOOTSTRAP_SERVER
+            value: kafka-bootstrap.platform-dev:9092
+          secretEnvVars:
+          - name: DB_URI
+            secretName: scantinel-dev-pguser-target-service-user
+            secretKey: uri
+      releaseName: target-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=false
