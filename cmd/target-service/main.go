@@ -84,6 +84,7 @@ func main() {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
+	e.GET("/healthz", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
 
 	e.Use(echoMiddleware.Logger())
 	e.Use(middleware.CorsMiddleware())
