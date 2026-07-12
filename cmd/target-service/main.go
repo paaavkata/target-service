@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	_ "target-service/cmd/target-service/docs"
@@ -64,10 +63,17 @@ func main() {
 		appID = "scantinel"
 	}
 
-	kafkaBrokers := viper.GetString("KAFKA_BOOTSTRAP_SERVER")
-	kafkaClientID := viper.GetString("KAFKA_CLIENT_ID")
-	if kafkaClientID == "" {
-		kafkaClientID = "target-service"
+	natsURL := viper.GetString("NATS_URL")
+	if natsURL == "" {
+		natsURL = "nats://nats.data-dev:4222"
+	}
+	natsClientID := viper.GetString("NATS_CLIENT_ID")
+	if natsClientID == "" {
+		natsClientID = "target-service"
+	}
+	auditTopic := viper.GetString("AUDIT_TOPIC")
+	if auditTopic == "" {
+		auditTopic = "audit-events"
 	}
 
 	// ── 2. Logger ─────────────────────────────────────────────────────────────
@@ -117,13 +123,13 @@ func main() {
 	}
 	logger.Info("database migrations applied")
 
-	// ── 6. Kafka producer ─────────────────────────────────────────────────────
-	brokers := parseBrokers(kafkaBrokers)
-	kafkaProducer, err := producer.NewAuditProducer(brokers, kafkaClientID)
+	// ── 6. NATS JetStream producer ────────────────────────────────────────────
+	auditProducer, err := producer.NewAuditProducer([]string{natsURL}, natsClientID)
 	if err != nil {
-		logger.Fatalf("failed to initialize Kafka producer: %v", err)
+		logger.Fatalf("failed to initialize NATS producer: %v", err)
 	}
-	defer kafkaProducer.Close()
+	defer auditProducer.Close()
+	_ = auditTopic // topic is baked into the AuditProducer constant; env var is informational
 
 	// ── 7. Repositories ───────────────────────────────────────────────────────
 	targetRepo := repository.NewTargetRepository(db)
@@ -132,8 +138,8 @@ func main() {
 
 	// ── 8. Services ───────────────────────────────────────────────────────────
 	verifier := service.NewVerificationService(authRepo)
-	targetSvc := service.NewTargetService(targetRepo, authRepo, verifier, kafkaProducer, appID)
-	assetSvc := service.NewAssetService(targetRepo, assetRepo, kafkaProducer, appID)
+	targetSvc := service.NewTargetService(targetRepo, authRepo, verifier, auditProducer, appID)
+	assetSvc := service.NewAssetService(targetRepo, assetRepo, auditProducer, appID)
 	scopeSvc := service.NewScopeService(targetRepo, authRepo)
 
 	// ── 9. Handlers ───────────────────────────────────────────────────────────
@@ -170,19 +176,4 @@ func main() {
 	if err := e.Start(serverAddr); err != nil && err != http.ErrServerClosed && ctx.Err() == nil {
 		logger.Fatalf("server error: %v", err)
 	}
-}
-
-// parseBrokers splits a comma-separated broker string into a slice.
-func parseBrokers(raw string) []string {
-	if raw == "" {
-		return []string{"localhost:9092"}
-	}
-	parts := strings.Split(raw, ",")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if t := strings.TrimSpace(p); t != "" {
-			result = append(result, t)
-		}
-	}
-	return result
 }

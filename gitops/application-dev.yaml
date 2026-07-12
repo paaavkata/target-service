@@ -30,10 +30,12 @@ spec:
             value: "8080"
           - name: APP_ID
             value: scantinel
-          - name: KAFKA_CLIENT_ID
+          - name: NATS_URL
+            value: nats://nats.data-dev:4222
+          - name: NATS_CLIENT_ID
             value: target-service
-          - name: KAFKA_BOOTSTRAP_SERVER
-            value: kafka-bootstrap.platform-dev:9092
+          - name: AUDIT_TOPIC
+            value: audit-events
           secretEnvVars:
           - name: DB_URI
             secretName: scantinel-dev-pguser-target-service-user
@@ -41,7 +43,7 @@ spec:
       releaseName: target-service
   destination:
     server: https://kubernetes.default.svc
-    namespace: platform-dev
+    namespace: scantinel-dev
   syncPolicy:
     automated:
       prune: true

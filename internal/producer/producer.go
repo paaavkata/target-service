@@ -1,4 +1,4 @@
-// Package producer wraps go-kafka to emit audit-events for target-service.
+// Package producer wraps go-nats to emit audit-events for target-service.
 // Events emitted: target_verified, scope_expanded, verification_failed (03 §2, 02 §6).
 // All events use the canonical AuditEvent envelope from go-events (audit.go).
 package producer
@@ -7,12 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"target-service/internal/model"
 	"time"
 
 	goevents "github.com/paaavkata/go-events"
-	gokafka "github.com/paaavkata/go-kafka"
 	logger "github.com/paaavkata/go-logger"
+	gonats "github.com/paaavkata/go-nats"
 
 	"github.com/google/uuid"
 )
@@ -27,30 +28,59 @@ const (
 	ServiceName = "target-service"
 )
 
-// AuditProducer emits AuditEvent messages to the audit-events Kafka topic.
+// AuditProducer emits AuditEvent messages to the audit-events NATS JetStream topic.
 type AuditProducer struct {
-	producer *gokafka.Producer
+	urls     []string
+	clientID string
+
+	mu        sync.Mutex
+	producers map[string]*gonats.Producer
+
+	wg sync.WaitGroup
 }
 
-// NewAuditProducer constructs a Sarama-backed producer for the audit-events topic.
-func NewAuditProducer(brokers []string, clientID string) (*AuditProducer, error) {
-	cfg := &gokafka.ProducerConfig{
-		Brokers:  brokers,
-		ClientID: clientID,
-		Topic:    AuditTopic,
+// NewAuditProducer constructs a NATS JetStream-backed producer for the audit-events topic.
+func NewAuditProducer(urls []string, clientID string) (*AuditProducer, error) {
+	return &AuditProducer{
+		urls:      urls,
+		clientID:  clientID,
+		producers: make(map[string]*gonats.Producer),
+	}, nil
+}
+
+// producerFor returns the cached gonats.Producer for the given topic,
+// creating it on first use.
+func (ap *AuditProducer) producerFor(topic string) (*gonats.Producer, error) {
+	ap.mu.Lock()
+	defer ap.mu.Unlock()
+
+	if p, ok := ap.producers[topic]; ok {
+		return p, nil
 	}
-	p, err := gokafka.NewProducer(cfg)
+
+	p, err := gonats.NewProducer(&gonats.ProducerConfig{
+		URLs:     ap.urls,
+		ClientID: ap.clientID,
+		Topic:    topic,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("auditProducer: %w", err)
+		return nil, err
 	}
-	return &AuditProducer{producer: p}, nil
+	ap.producers[topic] = p
+	return p, nil
 }
 
-// Close flushes and closes the underlying Sarama producer.
+// Close waits for pending fire-and-forget messages and closes all producers.
 func (ap *AuditProducer) Close() {
-	if err := ap.producer.Close(); err != nil {
-		logger.Errorf("auditProducer.Close: %v", err)
+	ap.wg.Wait()
+
+	ap.mu.Lock()
+	defer ap.mu.Unlock()
+
+	for _, p := range ap.producers {
+		p.Close()
 	}
+	logger.Info("audit NATS producer closed")
 }
 
 // EmitTargetVerified emits a target.verified audit event.
@@ -107,8 +137,8 @@ func (ap *AuditProducer) EmitScopeExpanded(ctx context.Context, appID string, ta
 	)
 }
 
-// emit builds the canonical AuditEvent envelope and sends it to Kafka.
-// partitionKey is used as the Kafka message key for consistent partition routing.
+// emit builds the canonical AuditEvent envelope and sends it to NATS JetStream.
+// partitionKey is carried in the NATS message header for routing context.
 func (ap *AuditProducer) emit(
 	ctx context.Context,
 	appID, eventType, message, partitionKey string,
@@ -149,7 +179,13 @@ func (ap *AuditProducer) emit(
 		return fmt.Errorf("auditProducer.emit %s: invalid event: %w", eventType, err)
 	}
 
-	if err := ap.producer.SendMessageWithContext(ctx, partitionKey, event); err != nil {
+	p, err := ap.producerFor(AuditTopic)
+	if err != nil {
+		logger.Errorf("auditProducer.emit %s: get producer: %v", eventType, err)
+		return fmt.Errorf("auditProducer.emit %s: %w", eventType, err)
+	}
+
+	if err := p.SendMessageWithContext(ctx, partitionKey, event); err != nil {
 		logger.Errorf("auditProducer.emit %s: %v", eventType, err)
 		return fmt.Errorf("auditProducer.emit %s: %w", eventType, err)
 	}

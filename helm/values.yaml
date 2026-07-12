@@ -37,11 +37,12 @@ parent:
       value: "8080"
     - name: APP_ID
       value: scantinel
-    - name: KAFKA_CLIENT_ID
+    - name: NATS_URL
+      value: nats://nats.data-dev:4222
+    - name: NATS_CLIENT_ID
       value: target-service
-    - name: KAFKA_BOOTSTRAP_SERVER
-      # Override per environment via gitops valuesObject.
-      value: kafka-bootstrap.platform-dev:9092
+    - name: AUDIT_TOPIC
+      value: audit-events
   secretEnvVars:
     - name: DB_URI
       # PGO-created secret: scantinel-<env>-pguser-target-service-user
