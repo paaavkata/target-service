@@ -6,6 +6,8 @@ import (
 	"strings"
 	"target-service/internal/model"
 	"target-service/internal/store"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 type targetRepository struct {
@@ -168,9 +170,9 @@ func (r *targetRepository) Delete(ctx context.Context, userID int64, uid string)
 	return nil
 }
 
-// extractRegistrableDomain derives the eTLD+1 from a host string.
-// For scaffold purposes this uses a simple heuristic (last two labels).
-// In production, replace with golang.org/x/net/publicsuffix.
+// extractRegistrableDomain derives the eTLD+1 from a host string using the
+// ICANN public suffix list (golang.org/x/net/publicsuffix). This correctly
+// handles multi-label TLDs (e.g. .co.uk, .com.au) and rejects prefix-spoofing.
 func extractRegistrableDomain(host string) string {
 	// Strip scheme
 	if idx := strings.Index(host, "://"); idx >= 0 {
@@ -180,13 +182,22 @@ func extractRegistrableDomain(host string) string {
 	if idx := strings.Index(host, "/"); idx >= 0 {
 		host = host[:idx]
 	}
-	// Strip port
-	if idx := strings.LastIndex(host, ":"); idx >= 0 {
-		host = host[:idx]
+	// Strip port (only if it looks like a port, not an IPv6 address)
+	if !strings.Contains(host, "[") {
+		if idx := strings.LastIndex(host, ":"); idx >= 0 {
+			host = host[:idx]
+		}
 	}
-	parts := strings.Split(host, ".")
-	if len(parts) < 2 {
-		return host
+	host = strings.ToLower(strings.TrimSpace(host))
+	// Use the public suffix list for correct eTLD+1 derivation.
+	rd, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil {
+		// Fallback: use last two labels for private TLDs or IPs.
+		parts := strings.Split(host, ".")
+		if len(parts) < 2 {
+			return host
+		}
+		return strings.Join(parts[len(parts)-2:], ".")
 	}
-	return strings.Join(parts[len(parts)-2:], ".")
+	return rd
 }

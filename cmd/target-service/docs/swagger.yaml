@@ -1,0 +1,512 @@
+definitions:
+  model.AssetDTO:
+    properties:
+      asset_type:
+        type: string
+      discovered_by:
+        type: string
+      first_seen:
+        type: string
+      last_seen:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      scope_class:
+        type: string
+      uid:
+        type: string
+      value:
+        type: string
+    type: object
+  model.AssetUpsertItem:
+    properties:
+      asset_type:
+        enum:
+        - subdomain
+        - ip
+        - port
+        - service
+        - endpoint
+        type: string
+      discovered_by:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      value:
+        maxLength: 512
+        minLength: 1
+        type: string
+    required:
+    - asset_type
+    - value
+    type: object
+  model.AuthorizationDTO:
+    properties:
+      expires_at:
+        type: string
+      method:
+        type: string
+      scope_kind:
+        type: string
+      scope_value:
+        type: string
+      uid:
+        type: string
+      verified_at:
+        type: string
+    type: object
+  model.CreateTargetRequest:
+    properties:
+      kind:
+        enum:
+        - domain
+        - url
+        - ip
+        - cidr
+        type: string
+      value:
+        maxLength: 512
+        minLength: 1
+        type: string
+    required:
+    - kind
+    - value
+    type: object
+  model.Response:
+    properties:
+      data: {}
+      message:
+        type: string
+      status:
+        description: '"success" | "error"'
+        type: string
+    type: object
+  model.ScopeCheckRequest:
+    properties:
+      host:
+        description: Host or IP being queried — exactly one must be provided.
+        type: string
+      ip:
+        type: string
+      phase:
+        type: string
+      target_uid:
+        type: string
+    required:
+    - phase
+    - target_uid
+    type: object
+  model.ScopeCheckResponse:
+    properties:
+      authorized:
+        type: boolean
+      reason:
+        type: string
+    type: object
+  model.TargetDTO:
+    properties:
+      created_at:
+        type: string
+      kind:
+        type: string
+      registrable_domain:
+        type: string
+      status:
+        type: string
+      uid:
+        type: string
+      updated_at:
+        type: string
+      value:
+        type: string
+    type: object
+  model.TargetDetailDTO:
+    properties:
+      authorization:
+        $ref: '#/definitions/model.AuthorizationDTO'
+      created_at:
+        type: string
+      kind:
+        type: string
+      registrable_domain:
+        type: string
+      status:
+        type: string
+      uid:
+        type: string
+      updated_at:
+        type: string
+      value:
+        type: string
+      verify_instructions:
+        type: string
+      verify_token:
+        type: string
+    type: object
+  model.UpsertAssetsRequest:
+    properties:
+      assets:
+        items:
+          $ref: '#/definitions/model.AssetUpsertItem'
+        minItems: 1
+        type: array
+    required:
+    - assets
+    type: object
+  model.VerifyTargetRequest:
+    properties:
+      method:
+        enum:
+        - dns_txt
+        - http_file
+        - meta_tag
+        - email
+        - ip_registry
+        type: string
+    required:
+    - method
+    type: object
+info:
+  contact:
+    email: security@scantinel.ai
+    name: Scantinel Support
+    url: https://scantinel.ai/contact
+  description: Ownership verification and authorization scope gate for the Scantinel
+    security-scanning platform. The POST /internal/v1/scope/check endpoint is the
+    hard gate that scan-service and agent-service MUST consult before dispatching
+    any intrusive task.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: https://scantinel.ai/terms
+  title: target-service API
+  version: "1.0"
+paths:
+  /internal/v1/scope/check:
+    post:
+      consumes:
+      - application/json
+      description: Cluster-only. Determines whether a given host or IP is authorized
+        for an intrusive scan phase on behalf of the target owner. Scan-service and
+        agent-service MUST call this before dispatching any intrusive task.
+      parameters:
+      - description: 'Scope check payload: {target_uid, host|ip, phase}'
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.ScopeCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.ScopeCheckResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Authorization scope gate (INTERNAL)
+      tags:
+      - internal
+  /internal/v1/targets/{target_uid}/assets:
+    post:
+      consumes:
+      - application/json
+      description: Cluster-only. Called by scan-service to insert or update assets
+        (subdomains/IPs/ports) discovered during recon phases into the target's inventory.
+      parameters:
+      - description: Target UID
+        in: path
+        name: target_uid
+        required: true
+        type: string
+      - description: Assets to upsert
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpsertAssetsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.AssetDTO'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Upsert discovered assets (INTERNAL)
+      tags:
+      - internal
+  /v1/targets:
+    get:
+      description: Return a paged list of targets owned by the authenticated user.
+      parameters:
+      - description: Authenticated user ID
+        in: header
+        name: X-User-Id
+        required: true
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Page size (default 10, max 100)
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.TargetDTO'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: List targets
+      tags:
+      - targets
+    post:
+      consumes:
+      - application/json
+      description: Register a domain/URL/IP/CIDR target and receive a verification
+        challenge token.
+      parameters:
+      - description: Authenticated user ID (stamped by Traefik)
+        in: header
+        name: X-User-Id
+        required: true
+        type: string
+      - description: Target registration payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.CreateTargetRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.TargetDetailDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Register a new target
+      tags:
+      - targets
+  /v1/targets/{target_uid}:
+    delete:
+      description: Remove a target and all its authorization scope and asset inventory.
+      parameters:
+      - description: Authenticated user ID
+        in: header
+        name: X-User-Id
+        required: true
+        type: string
+      - description: Target UID
+        in: path
+        name: target_uid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Delete a target
+      tags:
+      - targets
+    get:
+      description: Return a target with its current authorization scope and asset
+        inventory.
+      parameters:
+      - description: Authenticated user ID
+        in: header
+        name: X-User-Id
+        required: true
+        type: string
+      - description: Target UID
+        in: path
+        name: target_uid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.TargetDetailDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Get target detail
+      tags:
+      - targets
+  /v1/targets/{target_uid}/assets:
+    get:
+      description: Return the discovered asset inventory (subdomains/IPs/ports/services)
+        for the given target.
+      parameters:
+      - description: Authenticated user ID
+        in: header
+        name: X-User-Id
+        required: true
+        type: string
+      - description: Target UID
+        in: path
+        name: target_uid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.AssetDTO'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: List assets for a target
+      tags:
+      - assets
+  /v1/targets/{target_uid}/verify:
+    post:
+      consumes:
+      - application/json
+      description: Run a verification check (DNS TXT / HTTP file / meta tag) for the
+        given target.
+      parameters:
+      - description: Authenticated user ID
+        in: header
+        name: X-User-Id
+        required: true
+        type: string
+      - description: Target UID
+        in: path
+        name: target_uid
+        required: true
+        type: string
+      - description: Verification method
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.VerifyTargetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.TargetDetailDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Trigger ownership verification
+      tags:
+      - targets
+swagger: "2.0"
