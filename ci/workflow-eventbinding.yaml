@@ -1,0 +1,30 @@
+# CI trigger for target-service — argo-server native webhook (NO argo-events).
+# Submits the SHARED service-ci WorkflowTemplate (see service-ci.yaml);
+# everything service-specific is derived from the 'service' parameter.
+#
+# Deployed copy lives in infra-gitops argo-workflows/ci/target-service-eventbinding.yaml
+# (add it to the kustomization there); this file is the reference.
+#
+# GitHub push webhook → POST https://<argo-server>/api/v1/events/argo-workflows/
+# validated against the 'github.com' client in argo-workflows-webhook-clients.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowEventBinding
+metadata:
+  name: target-service-ci-on-push
+  namespace: argo-workflows
+  labels:
+    app.kubernetes.io/part-of: argo-workflows
+    platform.ci: "true"
+spec:
+  event:
+    selector: payload.repository.name == "target-service" && payload.ref == "refs/heads/main" && payload.after != "" && !payload.deleted
+  submit:
+    workflowTemplateRef:
+      name: service-ci
+    arguments:
+      parameters:
+        - name: service
+          value: target-service
+        - name: revision
+          valueFrom:
+            event: payload.after

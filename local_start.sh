@@ -7,6 +7,7 @@ set -e
 
 export ENV=local
 export APP_PORT=8080
+export METRICS_PORT=9090
 export HOST=127.0.0.1
 export LOG_LEVEL=debug
 export LOG_FORMAT=json
@@ -15,9 +16,10 @@ export APP_ID=scantinel
 # Database — update user/password/host for your local PG instance.
 export DB_URI='postgresql://target-service-user:changeme@127.0.0.1:5432/scantinel?sslmode=disable'
 
-# Kafka
-export KAFKA_BOOTSTRAP_SERVER=localhost:9092
-export KAFKA_CLIENT_ID=target-service
+# NATS JetStream — local server (docker run -p 4222:4222 nats -js)
+export NATS_URL=nats://127.0.0.1:4222
+export NATS_CLIENT_ID=target-service
+export AUDIT_TOPIC=audit-events
 
 # Generate Swagger docs.
 swag init -g main.go \

@@ -20,9 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 
 	_ "target-service/cmd/target-service/docs"
 	"target-service/internal/handler"
@@ -36,6 +33,7 @@ import (
 	"github.com/labstack/echo/v4"
 	echoMiddleware "github.com/labstack/echo/v4/middleware"
 	logger "github.com/paaavkata/go-logger"
+	goserver "github.com/paaavkata/go-server"
 	"github.com/spf13/viper"
 	echoSwagger "github.com/swaggo/echo-swagger"
 )
@@ -86,6 +84,11 @@ func main() {
 	logger.Init(logLevel, logFormat, "target-service", env, false, true, false, nil, nil)
 	logger.Infof("starting target-service (env=%s, app_id=%s)", env, appID)
 
+	// ── go-server: lifecycle + observability on :METRICS_PORT (default 9090) ──
+	// Serves /startupz /livez /readyz /metrics — the shared helm chart's probes
+	// and the Prometheus ServiceMonitor target this port.
+	mgr := goserver.FromViper("target-service")
+
 	// ── 3. HTTP server ────────────────────────────────────────────────────────
 	e := echo.New()
 	e.HideBanner = true
@@ -93,6 +96,7 @@ func main() {
 	e.GET("/healthz", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
 
 	e.Use(echoMiddleware.Logger())
+	e.Use(mgr.EchoMetricsMiddleware()) // Prometheus HTTP metrics on :9090/metrics
 	e.Use(middleware.CorsMiddleware())
 
 	// ── 4. Swagger (non-prod only) ────────────────────────────────────────────
@@ -116,7 +120,11 @@ func main() {
 	if err != nil {
 		logger.Fatalf("failed to connect to database: %v", err)
 	}
-	defer db.Close()
+	mgr.AddReadinessCheck("postgres", db.Ping)
+	mgr.OnShutdown("postgres", func(_ context.Context) error {
+		db.Close()
+		return nil
+	})
 
 	if err := db.Migrate(); err != nil {
 		logger.Fatalf("failed to apply migrations: %v", err)
@@ -128,7 +136,10 @@ func main() {
 	if err != nil {
 		logger.Fatalf("failed to initialize NATS producer: %v", err)
 	}
-	defer auditProducer.Close()
+	mgr.OnShutdown("nats-producer", func(_ context.Context) error {
+		auditProducer.Close()
+		return nil
+	})
 	_ = auditTopic // topic is baked into the AuditProducer constant; env var is informational
 
 	// ── 7. Repositories ───────────────────────────────────────────────────────
@@ -160,20 +171,15 @@ func main() {
 	internalV1 := e.Group("/internal/v1")
 	internalHandler.RegisterRoutes(internalV1)
 
-	// ── 11. Graceful shutdown ─────────────────────────────────────────────────
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-		<-sig
-		logger.Info("shutdown signal received — draining")
-		cancel()
-		_ = e.Shutdown(ctx)
-	}()
+	// ── 11. Observability + HTTP server (go-server managed lifecycle) ─────────
+	mgr.StartObservability()
+	mgr.SetStarted() // migrations + init done → /startupz 200, /readyz live
 
 	serverAddr := fmt.Sprintf(":%s", appPort)
 	logger.Infof("target-service listening on %s", serverAddr)
-	if err := e.Start(serverAddr); err != nil && err != http.ErrServerClosed && ctx.Err() == nil {
-		logger.Fatalf("server error: %v", err)
-	}
+	mgr.Run(
+		func() error { return e.Start(serverAddr) },
+		func(shutdownCtx context.Context) error { return e.Shutdown(shutdownCtx) },
+	)
+	logger.Info("target-service: stopped")
 }

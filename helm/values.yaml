@@ -2,7 +2,7 @@ parent:
   environment: dev
   image:
     registry: registry.internal.cloudfusion.tech
-    app: scantinel/app
+    app: platform
     service: target-service
     tag: latest
     pullPolicy: Always
@@ -14,6 +14,7 @@ parent:
     replicas: 1
   container:
     port: 8080
+    metricsPort: 9090
     host: 127.0.0.1
   # External routes are exposed under /api/target (prefix stripped by Traefik).
   # Internal routes (/internal/v1/...) are cluster-only via NetworkPolicy — not
@@ -21,7 +22,19 @@ parent:
   ingress:
     path: /api/target
     stripPrefix: true
-  host: scantinel.ai
+  host: dev.scantinel.ai
+  # Attribution label platform.app_id on all rendered objects.
+  appId: scantinel
+  # Probes come from parent-chart 1.3.0 defaults: /startupz /livez /readyz on the
+  # metrics port (:9090), served by go-server (wired in main.go). No override needed.
+  # Prometheus Operator ServiceMonitor — scrapes /metrics on the metrics port.
+  serviceMonitor:
+    enabled: true
+    interval: 60s
+    path: /metrics
+    namespaceSelector:
+      matchNames:
+        - scantinel-dev
   resources:
     requests:
       cpu: 25m

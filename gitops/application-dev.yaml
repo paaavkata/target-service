@@ -1,45 +1,37 @@
+# Reference copy — the deployed file lives in infra-gitops
+# `bootstrap/applications/services/target-service-dev.yaml`. service-ci bumps
+# `.spec.source.targetRevision` and `parent.image.tag` there on every push to main.
+# The pinned tag below is the bootstrap value (repo HEAD at scaffold time); the chart
+# version 1.0.0-<sha> only exists in Zot after the first service-ci run.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: target-service-dev
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: '3'   # deploys after scan-service (wave 2)
+    argocd.argoproj.io/sync-wave: '1'
 spec:
-  project: platform-dev
+  project: scantinel-dev
   source:
     repoURL: registry.internal.cloudfusion.tech
     chart: charts/target-service
-    targetRevision: 0.1.0-bootstrap20260711
+    targetRevision: 1.0.0-c846a40
     helm:
       valuesObject:
         parent:
+          # Gateway plugin stamps the trusted X-App-Id (backends 400 without it).
+          # Middleware CRD lives in platform-dev; cross-namespace reference.
+          ingress:
+            gatewayPluginEnabled: true
+            gatewayPluginNamespace: platform-dev
           image:
-            tag: bootstrap-20260711
+            tag: "c846a40"
           environment: dev
           host: dev.scantinel.ai
-          ingress:
-            path: /api/target
-            stripPrefix: true
-          envVars:
-          - name: LOG_LEVEL
-            value: info
-          - name: LOG_FORMAT
-            value: json
-          - name: APP_PORT
-            value: "8080"
-          - name: APP_ID
-            value: scantinel
-          - name: NATS_URL
-            value: nats://nats.data-dev:4222
-          - name: NATS_CLIENT_ID
-            value: target-service
-          - name: AUDIT_TOPIC
-            value: audit-events
-          secretEnvVars:
-          - name: DB_URI
-            secretName: scantinel-dev-pguser-target-service-user
-            secretKey: uri
+          serviceMonitor:
+            namespaceSelector:
+              matchNames:
+                - scantinel-dev
       releaseName: target-service
   destination:
     server: https://kubernetes.default.svc
@@ -49,4 +41,4 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-    - CreateNamespace=false
+      - CreateNamespace=false

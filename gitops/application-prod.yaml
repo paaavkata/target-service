@@ -1,51 +1,61 @@
+# Reference copy — the deployed file lives in infra-gitops
+# `bootstrap/applications/services/target-service-prod.yaml`. Prod is promoted via the
+# `promote-to-prod` Argo workflow (copies the dev-verified chart version + tag here).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: target-service-prod
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: '3'
+    argocd.argoproj.io/sync-wave: '1'
 spec:
-  project: platform-prod
+  project: scantinel-prod
   source:
     repoURL: registry.internal.cloudfusion.tech
     chart: charts/target-service
-    targetRevision: 0.1.0-PLACEHOLDER
+    targetRevision: 1.0.0-c846a40
     helm:
       valuesObject:
         parent:
+          ingress:
+            gatewayPluginEnabled: true
+            gatewayPluginNamespace: platform-prod
           image:
-            tag: PLACEHOLDER
+            tag: "c846a40"
           environment: prod
           host: scantinel.ai
           deployment:
             replicas: 2
-          ingress:
-            path: /api/target
-            stripPrefix: true
+          serviceMonitor:
+            namespaceSelector:
+              matchNames:
+                - scantinel-prod
           envVars:
-          - name: LOG_LEVEL
-            value: info
-          - name: LOG_FORMAT
-            value: json
-          - name: APP_PORT
-            value: "8080"
-          - name: APP_ID
-            value: scantinel
-          - name: NATS_URL
-            value: nats://nats.data-prod:4222
-          - name: NATS_CLIENT_ID
-            value: target-service
-          - name: AUDIT_TOPIC
-            value: audit-events
+            - name: LOG_LEVEL
+              value: info
+            - name: LOG_FORMAT
+              value: json
+            - name: APP_PORT
+              value: "8080"
+            - name: APP_ID
+              value: scantinel
+            - name: NATS_URL
+              value: nats://nats.data-prod:4222
+            - name: NATS_CLIENT_ID
+              value: target-service
+            - name: AUDIT_TOPIC
+              value: audit-events
           secretEnvVars:
-          - name: DB_URI
-            secretName: scantinel-prod-pguser-target-service-user
-            secretKey: uri
+            - name: DB_URI
+              secretName: scantinel-prod-pguser-target-service-user
+              secretKey: uri
       releaseName: target-service
   destination:
     server: https://kubernetes.default.svc
-    namespace: platform-prod
+    namespace: scantinel-prod
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
-    - CreateNamespace=false
+      - CreateNamespace=false
