@@ -177,6 +177,12 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 		if isSharedInfra(ip) {
 			return denyResult(fmt.Sprintf("IP %s belongs to a known shared-infrastructure range — intrusive testing is not permitted (06 §3)", queryIP)), nil
 		}
+		// Defense in depth for the ip/cidr hard-disable: an IP-scoped query can
+		// only ever be satisfied by an ip_range authorization, and those are
+		// refused while IP targets are disabled (see IPTargetsEnabled).
+		if !IPTargetsEnabled {
+			return denyResult(fmt.Sprintf("IP-scoped scan refused: %v", ErrIPTargetsUnsupported)), nil
+		}
 		pinnedIPs = []string{ip.String()}
 	}
 
@@ -223,6 +229,13 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 			}
 
 		case model.ScopeKindIPRange:
+			// Defense in depth: while IP targets are hard-disabled, a
+			// pre-existing ip_range authorization must not grant anything
+			// (scope-grant bypass guard — see IPTargetsEnabled). Skipping it
+			// falls through to the default deny.
+			if !IPTargetsEnabled {
+				continue
+			}
 			// Authorized scope: confirmed IP range.
 			if queryIP != "" {
 				ip := net.ParseIP(queryIP)

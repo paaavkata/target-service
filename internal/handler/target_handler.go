@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"target-service/internal/model"
 	"target-service/internal/service"
@@ -38,6 +39,7 @@ func (h *TargetHandler) RegisterRoutes(g *echo.Group) {
 // @Param        request    body      model.CreateTargetRequest    true  "Target registration payload"
 // @Success      201        {object}  model.Response{data=model.TargetDetailDTO}
 // @Failure      400        {object}  model.Response
+// @Failure      422        {object}  model.Response  "IP/CIDR targets are not yet supported"
 // @Failure      500        {object}  model.Response
 // @Router       /v1/targets [post]
 func (h *TargetHandler) Create(c echo.Context) error {
@@ -53,6 +55,11 @@ func (h *TargetHandler) Create(c echo.Context) error {
 
 	dto, err := h.svc.CreateTarget(c.Request().Context(), userID, req)
 	if err != nil {
+		// ip/cidr targets are hard-disabled until real IP-range ownership
+		// verification exists — a clear client error, not a 500.
+		if errors.Is(err, service.ErrIPTargetsUnsupported) {
+			return h.helper.PrepareResponse(c, http.StatusUnprocessableEntity, err.Error(), err, nil)
+		}
 		return h.helper.PrepareResponse(c, http.StatusInternalServerError, "Failed to register target", err, nil)
 	}
 	return h.helper.PrepareResponse(c, http.StatusCreated, "Target registered successfully", nil, dto)

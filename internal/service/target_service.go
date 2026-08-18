@@ -2,11 +2,25 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"target-service/internal/model"
 	"target-service/internal/producer"
 	"target-service/internal/repository"
 )
+
+// IPTargetsEnabled hard-disables ip/cidr target kinds (06 §2 gap): real
+// registry-contact ownership verification for raw IP ranges is NOT implemented
+// — the ip_registry method only returns "pending manual review", which is a
+// scope-grant bypass risk if a manual step ever rubber-stamps it. Until a real
+// RIR-contact verification flow exists, ip/cidr targets are refused at creation
+// AND ip_range authorizations are refused at the scope gate (defense in depth,
+// see scope_service.go CheckScope). Flip to true only once that flow ships.
+var IPTargetsEnabled = false
+
+// ErrIPTargetsUnsupported is the sentinel returned when an ip/cidr target is
+// requested while IPTargetsEnabled is false. Handlers map it to a 4xx.
+var ErrIPTargetsUnsupported = errors.New("IP/CIDR targets are not yet supported (ownership verification for raw IP ranges is not implemented)")
 
 type targetService struct {
 	targetRepo    repository.TargetRepositoryInterface
@@ -34,6 +48,12 @@ func NewTargetService(
 }
 
 func (s *targetService) CreateTarget(ctx context.Context, userID int64, req *model.CreateTargetRequest) (*model.TargetDetailDTO, error) {
+	// Hard-disable ip/cidr targets BEFORE anything is persisted: their ownership
+	// verification is not implemented (see IPTargetsEnabled).
+	if (req.Kind == model.TargetKindIP || req.Kind == model.TargetKindCIDR) && !IPTargetsEnabled {
+		return nil, ErrIPTargetsUnsupported
+	}
+
 	t, err := s.targetRepo.Create(ctx, userID, req)
 	if err != nil {
 		return nil, fmt.Errorf("targetService.CreateTarget: %w", err)

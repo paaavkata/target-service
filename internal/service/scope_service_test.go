@@ -99,6 +99,17 @@ func activeAuth(scopeKind, scopeValue string) model.Authorization {
 // SSRF/reserved-IP guard passes and domain-scope logic is what's under test.
 func publicResolver(string) ([]string, error) { return []string{"203.0.113.10"}, nil }
 
+// enableIPTargets temporarily lifts the ip/cidr hard-disable so tests can
+// exercise the CIDR-matching logic itself. Restored via t.Cleanup. The
+// hard-disable default (IPTargetsEnabled == false) is itself covered by
+// TestScopeCheck_IPRangeAuth_DisabledByDefault_Denied below.
+func enableIPTargets(t *testing.T) {
+	t.Helper()
+	prev := service.IPTargetsEnabled
+	service.IPTargetsEnabled = true
+	t.Cleanup(func() { service.IPTargetsEnabled = prev })
+}
+
 func makeSvc(target *model.Target, auths []model.Authorization) service.ScopeServiceInterface {
 	return makeSvcWithResolver(target, auths, publicResolver)
 }
@@ -252,6 +263,7 @@ func TestScopeCheck_DifferentRegistrableDomain_Denied(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestScopeCheck_IPInCIDR_Authorized(t *testing.T) {
+	enableIPTargets(t)
 	target := verifiedTarget("uid-1", model.TargetKindCIDR, "203.0.113.0/24", "")
 	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindIPRange, "203.0.113.0/24")})
 
@@ -267,6 +279,7 @@ func TestScopeCheck_IPInCIDR_Authorized(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestScopeCheck_IPOutsideCIDR_Denied(t *testing.T) {
+	enableIPTargets(t) // so the denial exercises CIDR matching, not the hard-disable
 	target := verifiedTarget("uid-1", model.TargetKindCIDR, "203.0.113.0/24", "")
 	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindIPRange, "203.0.113.0/24")})
 
@@ -282,6 +295,7 @@ func TestScopeCheck_IPOutsideCIDR_Denied(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestScopeCheck_SingleIP_Authorized(t *testing.T) {
+	enableIPTargets(t)
 	target := verifiedTarget("uid-1", model.TargetKindIP, "203.0.113.5", "")
 	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindIPRange, "203.0.113.5")})
 
@@ -437,6 +451,7 @@ func TestIsSubdomainOf_ViaScopeCheck(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestScopeCheck_MultipleAuths_HostMatchesFirst(t *testing.T) {
+	enableIPTargets(t)
 	target := &model.Target{
 		ID:                10,
 		UID:               "uid-multi",
@@ -560,6 +575,28 @@ func TestScopeCheck_DirectInternalIP_Denied(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, res.Authorized, "direct metadata IP must be denied")
 	assert.Contains(t, res.Reason, "reserved")
+}
+
+// ---------------------------------------------------------------------------
+// ip/cidr hard-disable defense in depth: while IPTargetsEnabled is false
+// (the default), a pre-existing ip_range authorization must not grant a scan —
+// neither for an IP query (explicit refusal) nor as a leftover scope row.
+// ---------------------------------------------------------------------------
+
+func TestScopeCheck_IPRangeAuth_DisabledByDefault_Denied(t *testing.T) {
+	require.False(t, service.IPTargetsEnabled, "test setup: IP targets must be disabled by default")
+
+	target := verifiedTarget("uid-1", model.TargetKindCIDR, "203.0.113.0/24", "")
+	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindIPRange, "203.0.113.0/24")})
+
+	// This exact request is authorized in TestScopeCheck_IPInCIDR_Authorized
+	// once enableIPTargets(t) is applied — without it, it must be refused.
+	res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+		TargetUID: "uid-1", IP: "203.0.113.50", Phase: "P2",
+	})
+	require.NoError(t, err)
+	assert.False(t, res.Authorized, "ip_range authorization must not grant a scan while IP targets are disabled")
+	assert.Contains(t, res.Reason, "not yet supported")
 }
 
 // An authorized request returns the pinned public IPs so the caller can bind to

@@ -97,7 +97,9 @@ func verifyHTTPFile(ctx context.Context, host string, token string) (bool, strin
 	h := normalizeHost(host)
 	url := fmt.Sprintf("https://%s/.well-known/scantinel-verify/%s", h, token)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Hardened client: refuses redirects and blocks reserved/internal IPs at
+	// dial time (SSRF / DNS-rebinding guard) — see safe_http_client.go.
+	client := newSafeVerificationClient(10 * time.Second)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return false, fmt.Sprintf("failed to build HTTP request: %v", err), nil
@@ -129,7 +131,9 @@ func verifyMetaTag(ctx context.Context, host string, token string) (bool, string
 	h := normalizeHost(host)
 	url := fmt.Sprintf("https://%s/", h)
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	// Hardened client: refuses redirects and blocks reserved/internal IPs at
+	// dial time (SSRF / DNS-rebinding guard) — see safe_http_client.go.
+	client := newSafeVerificationClient(15 * time.Second)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return false, fmt.Sprintf("failed to build HTTP request: %v", err), nil
