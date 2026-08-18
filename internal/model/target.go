@@ -182,9 +182,15 @@ type AssetDTO struct {
 
 // ScopeCheckResponse is returned by POST /internal/v1/scope/check.
 // authorized=true means the caller MAY proceed with an intrusive phase.
+//
+// AllowedIPs is the set of public IPs the host resolved to AT GATE TIME. Callers
+// MUST pin their connections to these addresses (and refuse to follow DNS to any
+// other IP) to close the DNS-rebinding TOCTOU window between this check and the
+// actual scan. For an IP-scoped request it echoes the queried IP.
 type ScopeCheckResponse struct {
-	Authorized bool   `json:"authorized"`
-	Reason     string `json:"reason"`
+	Authorized bool     `json:"authorized"`
+	Reason     string   `json:"reason"`
+	AllowedIPs []string `json:"allowed_ips,omitempty"`
 }
 
 // SearchParameters carries pagination and filtering for list endpoints.

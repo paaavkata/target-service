@@ -95,10 +95,18 @@ func activeAuth(scopeKind, scopeValue string) model.Authorization {
 	}
 }
 
+// publicResolver maps every host to a single public (TEST-NET-3) IP, so the
+// SSRF/reserved-IP guard passes and domain-scope logic is what's under test.
+func publicResolver(string) ([]string, error) { return []string{"203.0.113.10"}, nil }
+
 func makeSvc(target *model.Target, auths []model.Authorization) service.ScopeServiceInterface {
+	return makeSvcWithResolver(target, auths, publicResolver)
+}
+
+func makeSvcWithResolver(target *model.Target, auths []model.Authorization, r func(string) ([]string, error)) service.ScopeServiceInterface {
 	tr := &fakeTargetRepo{byUID: map[string]*model.Target{target.UID: target}}
 	ar := &fakeAuthRepo{auths: map[int64][]model.Authorization{target.ID: auths}}
-	return service.NewScopeService(tr, ar)
+	return service.NewScopeServiceWithResolver(tr, ar, r)
 }
 
 // ---------------------------------------------------------------------------
@@ -452,7 +460,7 @@ func TestScopeCheck_MultipleAuths_HostMatchesFirst(t *testing.T) {
 
 	tr := &fakeTargetRepo{byUID: map[string]*model.Target{"uid-multi": target}}
 	ar := &fakeAuthRepo{auths: map[int64][]model.Authorization{10: {authDomain, authIP}}}
-	svc := service.NewScopeService(tr, ar)
+	svc := service.NewScopeServiceWithResolver(tr, ar, publicResolver)
 
 	// Host query — matches domain auth
 	res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
@@ -474,4 +482,97 @@ func TestScopeCheck_MultipleAuths_HostMatchesFirst(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.False(t, res.Authorized, "198.51.100.1 is outside all authorized scopes")
+}
+
+// ---------------------------------------------------------------------------
+// SSRF / DNS-rebinding guard tests (the load-bearing hardening)
+// ---------------------------------------------------------------------------
+
+// A verified domain whose subdomain resolves to cloud metadata / RFC1918 must be
+// DENIED even though the name is in registrable-domain scope — this is the SSRF
+// path the gate previously allowed.
+func TestScopeCheck_ResolvesToInternalIP_Denied(t *testing.T) {
+	internalAnswers := map[string][]string{
+		"metadata": {"169.254.169.254"}, // AWS/GCP IMDS
+		"rfc1918":  {"10.0.0.5"},
+		"loopback": {"127.0.0.1"},
+		"cgnat":    {"100.64.1.1"},
+		"linklocal": {"169.254.10.10"},
+		"ipv6ula":  {"fd00::1"},
+	}
+	for name, answer := range internalAnswers {
+		t.Run(name, func(t *testing.T) {
+			target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+			r := func(string) ([]string, error) { return answer, nil }
+			svc := makeSvcWithResolver(target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")}, r)
+
+			res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+				TargetUID: "uid-1", Host: "api.myapp.test", Phase: "P2",
+			})
+			require.NoError(t, err)
+			assert.False(t, res.Authorized, "%s answer must be denied", name)
+			assert.Contains(t, res.Reason, "reserved")
+		})
+	}
+}
+
+// If a host resolves to a MIX of a public and an internal IP, deny the whole
+// request (a rebinding answer set must not slip through on the public member).
+func TestScopeCheck_MixedResolution_Denied(t *testing.T) {
+	target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+	r := func(string) ([]string, error) { return []string{"203.0.113.10", "10.0.0.1"}, nil }
+	svc := makeSvcWithResolver(target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")}, r)
+
+	res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+		TargetUID: "uid-1", Host: "myapp.test", Phase: "P2",
+	})
+	require.NoError(t, err)
+	assert.False(t, res.Authorized, "mixed public+internal resolution must be denied")
+}
+
+// Fail closed: an in-scope host that cannot be resolved (or resolves to nothing)
+// must be denied rather than authorized on the name alone.
+func TestScopeCheck_ResolutionFailsOrEmpty_Denied(t *testing.T) {
+	target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+	auth := []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")}
+
+	errResolver := func(string) ([]string, error) { return nil, assert.AnError }
+	svc := makeSvcWithResolver(target, auth, errResolver)
+	res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{TargetUID: "uid-1", Host: "myapp.test", Phase: "P2"})
+	require.NoError(t, err)
+	assert.False(t, res.Authorized, "resolution error must fail closed")
+
+	emptyResolver := func(string) ([]string, error) { return []string{}, nil }
+	svc = makeSvcWithResolver(target, auth, emptyResolver)
+	res, err = svc.CheckScope(context.Background(), &model.ScopeCheckRequest{TargetUID: "uid-1", Host: "myapp.test", Phase: "P2"})
+	require.NoError(t, err)
+	assert.False(t, res.Authorized, "empty resolution must fail closed")
+}
+
+// A directly-supplied internal IP must be denied even if an IP-range auth exists.
+func TestScopeCheck_DirectInternalIP_Denied(t *testing.T) {
+	target := verifiedTarget("uid-1", model.TargetKindIP, "169.254.169.254", "")
+	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindIPRange, "169.254.0.0/16")})
+
+	res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+		TargetUID: "uid-1", IP: "169.254.169.254", Phase: "P2",
+	})
+	require.NoError(t, err)
+	assert.False(t, res.Authorized, "direct metadata IP must be denied")
+	assert.Contains(t, res.Reason, "reserved")
+}
+
+// An authorized request returns the pinned public IPs so the caller can bind to
+// them and defeat a later rebinding answer.
+func TestScopeCheck_Authorized_ReturnsPinnedIPs(t *testing.T) {
+	target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+	r := func(string) ([]string, error) { return []string{"203.0.113.10", "203.0.113.11"}, nil }
+	svc := makeSvcWithResolver(target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")}, r)
+
+	res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+		TargetUID: "uid-1", Host: "myapp.test", Phase: "P2",
+	})
+	require.NoError(t, err)
+	require.True(t, res.Authorized)
+	assert.ElementsMatch(t, []string{"203.0.113.10", "203.0.113.11"}, res.AllowedIPs)
 }
