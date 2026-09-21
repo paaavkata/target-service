@@ -5,11 +5,14 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"target-service/internal/model"
 	"target-service/internal/repository"
+
+	"github.com/paaavkata/go-safedial"
 )
 
 // knownSharedInfraRanges is a conservative denylist of well-known CDN / shared
@@ -31,44 +34,18 @@ var knownSharedInfraRanges = []string{
 	"23.32.0.0/11", "23.64.0.0/14", "23.192.0.0/11",
 }
 
-// reservedRanges are non-public / internal-infrastructure blocks that must NEVER
-// be scanned, regardless of domain ownership. Resolving a verified domain to one
-// of these (directly or via DNS rebinding) is the classic SSRF path into cloud
-// metadata (169.254.169.254), the pod network, and RFC1918 estates. Most are
-// also covered by net.IP helper methods, but CGNAT and the metadata IP are not,
-// so we keep an explicit CIDR list and belt-and-suspenders the helpers too.
-var reservedCIDRs = []string{
-	"0.0.0.0/8",          // "this host"
-	"10.0.0.0/8",         // RFC1918
-	"100.64.0.0/10",      // CGNAT (RFC6598) — cloud LB / pod ranges live here
-	"127.0.0.0/8",        // loopback
-	"169.254.0.0/16",     // link-local incl. 169.254.169.254 cloud metadata
-	"172.16.0.0/12",      // RFC1918
-	"192.0.0.0/24",       // IETF protocol assignments
-	"192.168.0.0/16",     // RFC1918
-	"198.18.0.0/15",      // benchmarking
-	"::1/128",            // IPv6 loopback
-	"fc00::/7",           // IPv6 unique-local
-	"fe80::/10",          // IPv6 link-local
-	"fd00:ec2::254/128",  // AWS IMDS IPv6
-	// NB: IPv4-mapped IPv6 (::ffff:a.b.c.d) is deliberately NOT blanket-blocked
-	// here — Go stores all IPv4 as the mapped form, so a /96 would match every
-	// address. The mapped case is covered because the net.IP helpers above
-	// evaluate the embedded IPv4 (e.g. ::ffff:10.0.0.1 → IsPrivate() == true).
-}
+// The reserved/internal-IP denylist (RFC1918, loopback, link-local incl. cloud
+// metadata, CGNAT, IPv6 ULA, ...) lives in github.com/paaavkata/go-safedial —
+// shared with scan-service and agent-service (06 §3, §7). isSharedInfra below
+// stays local: it is an authorization-policy exclusion (CDN ranges), not a
+// network-safety list, and no other consumer needs it.
 
 var parsedSharedRanges []*net.IPNet
-var parsedReservedRanges []*net.IPNet
 
 func init() {
 	for _, cidr := range knownSharedInfraRanges {
 		if _, network, err := net.ParseCIDR(cidr); err == nil {
 			parsedSharedRanges = append(parsedSharedRanges, network)
-		}
-	}
-	for _, cidr := range reservedCIDRs {
-		if _, network, err := net.ParseCIDR(cidr); err == nil {
-			parsedReservedRanges = append(parsedReservedRanges, network)
 		}
 	}
 }
@@ -171,8 +148,8 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 		if ip == nil {
 			return denyResult(fmt.Sprintf("invalid IP address: %s", queryIP)), nil
 		}
-		if isReserved(ip) {
-			return denyResult(fmt.Sprintf("IP %s is a private/reserved/internal address — refused (SSRF guard, 06 §3)", queryIP)), nil
+		if denied, reason := safedial.IsDeniedIP(ip); denied {
+			return denyResult(fmt.Sprintf("IP %s is a private/reserved/internal address — refused (SSRF guard, 06 §3): %s", queryIP, reason)), nil
 		}
 		if isSharedInfra(ip) {
 			return denyResult(fmt.Sprintf("IP %s belongs to a known shared-infrastructure range — intrusive testing is not permitted (06 §3)", queryIP)), nil
@@ -189,24 +166,21 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 	// If a host was given, resolve it and vet EVERY answer. Fail closed: a
 	// resolution error, an empty answer, or ANY reserved/shared-infra address
 	// denies the whole request — never authorize a host we could not fully vet.
+	// ResolveStrict is the authorization-gate mode: any denied answer denies the
+	// whole host (a rebinding answer set must not slip through on one public
+	// member); isSharedInfra stays a local check over the returned IPs.
 	if queryHost != "" {
-		resolvedIPs, err := s.resolve(queryHost)
+		resolver := safedial.Resolver{Lookup: safedial.LookupHostFunc(s.resolve)}
+		resolvedIPs, err := resolver.ResolveStrict(ctx, queryHost)
 		if err != nil {
+			if errors.Is(err, safedial.ErrDeniedAddress) {
+				return denyResult(fmt.Sprintf("host %q resolves to a private/reserved/internal IP — refused (SSRF/rebinding guard, 06 §3): %v", queryHost, err)), nil
+			}
 			return denyResult(fmt.Sprintf("host %q could not be resolved (%v) — refused (fail-closed)", queryHost, err)), nil
 		}
-		if len(resolvedIPs) == 0 {
-			return denyResult(fmt.Sprintf("host %q resolved to no addresses — refused (fail-closed)", queryHost)), nil
-		}
-		for _, rip := range resolvedIPs {
-			ip := net.ParseIP(rip)
-			if ip == nil {
-				return denyResult(fmt.Sprintf("host %q returned an unparseable address (%s) — refused (fail-closed)", queryHost, rip)), nil
-			}
-			if isReserved(ip) {
-				return denyResult(fmt.Sprintf("host %q resolves to a private/reserved/internal IP (%s) — refused (SSRF/rebinding guard, 06 §3)", queryHost, rip)), nil
-			}
+		for _, ip := range resolvedIPs {
 			if isSharedInfra(ip) {
-				return denyResult(fmt.Sprintf("host %q resolves to a shared-infrastructure IP (%s) — intrusive testing is not permitted (06 §3)", queryHost, rip)), nil
+				return denyResult(fmt.Sprintf("host %q resolves to a shared-infrastructure IP (%s) — intrusive testing is not permitted (06 §3)", queryHost, ip.String())), nil
 			}
 			pinnedIPs = append(pinnedIPs, ip.String())
 		}
@@ -256,23 +230,6 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 	}
 
 	return denyResult(fmt.Sprintf("host/IP is not within any authorized scope for target %s — separate verification required (06 §3)", req.TargetUID)), nil
-}
-
-// isReserved reports whether ip is a private, loopback, link-local (incl. cloud
-// metadata 169.254.169.254), CGNAT, or otherwise non-public address that must
-// never be scanned. Combines net.IP helpers with the explicit reservedCIDRs.
-func isReserved(ip net.IP) bool {
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() ||
-		ip.IsMulticast() || ip.IsUnspecified() {
-		return true
-	}
-	for _, network := range parsedReservedRanges {
-		if network.Contains(ip) {
-			return true
-		}
-	}
-	return false
 }
 
 // isSubdomainOf returns true if host equals apex or ends with "."+apex.

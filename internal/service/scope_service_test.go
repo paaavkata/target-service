@@ -508,12 +508,12 @@ func TestScopeCheck_MultipleAuths_HostMatchesFirst(t *testing.T) {
 // path the gate previously allowed.
 func TestScopeCheck_ResolvesToInternalIP_Denied(t *testing.T) {
 	internalAnswers := map[string][]string{
-		"metadata": {"169.254.169.254"}, // AWS/GCP IMDS
-		"rfc1918":  {"10.0.0.5"},
-		"loopback": {"127.0.0.1"},
-		"cgnat":    {"100.64.1.1"},
+		"metadata":  {"169.254.169.254"}, // AWS/GCP IMDS
+		"rfc1918":   {"10.0.0.5"},
+		"loopback":  {"127.0.0.1"},
+		"cgnat":     {"100.64.1.1"},
 		"linklocal": {"169.254.10.10"},
-		"ipv6ula":  {"fd00::1"},
+		"ipv6ula":   {"fd00::1"},
 	}
 	for name, answer := range internalAnswers {
 		t.Run(name, func(t *testing.T) {

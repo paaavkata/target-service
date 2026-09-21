@@ -10,6 +10,7 @@ require (
 	github.com/paaavkata/go-events v0.1.0
 	github.com/paaavkata/go-logger v0.1.1
 	github.com/paaavkata/go-nats v0.2.0
+	github.com/paaavkata/go-safedial v0.1.0
 	github.com/paaavkata/go-server v0.1.0
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.11.1
@@ -92,5 +93,6 @@ replace (
 	github.com/paaavkata/go-events => ../shared-libs/go-events
 	github.com/paaavkata/go-logger => ../shared-libs/go-logger
 	github.com/paaavkata/go-nats => ../shared-libs/go-nats
+	github.com/paaavkata/go-safedial => ../shared-libs/go-safedial
 	github.com/paaavkata/go-server => ../shared-libs/go-server
 )

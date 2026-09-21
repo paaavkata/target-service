@@ -14,6 +14,8 @@ import (
 	"target-service/internal/model"
 	"target-service/internal/repository"
 	"time"
+
+	"github.com/paaavkata/go-safedial"
 )
 
 // VerificationService orchestrates challenge issuance and per-method checks.
@@ -98,8 +100,8 @@ func verifyHTTPFile(ctx context.Context, host string, token string) (bool, strin
 	url := fmt.Sprintf("https://%s/.well-known/scantinel-verify/%s", h, token)
 
 	// Hardened client: refuses redirects and blocks reserved/internal IPs at
-	// dial time (SSRF / DNS-rebinding guard) — see safe_http_client.go.
-	client := newSafeVerificationClient(10 * time.Second)
+	// dial time (SSRF / DNS-rebinding guard) — github.com/paaavkata/go-safedial.
+	client := safedial.NewVerificationHTTPClient(10 * time.Second)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return false, fmt.Sprintf("failed to build HTTP request: %v", err), nil
@@ -132,8 +134,8 @@ func verifyMetaTag(ctx context.Context, host string, token string) (bool, string
 	url := fmt.Sprintf("https://%s/", h)
 
 	// Hardened client: refuses redirects and blocks reserved/internal IPs at
-	// dial time (SSRF / DNS-rebinding guard) — see safe_http_client.go.
-	client := newSafeVerificationClient(15 * time.Second)
+	// dial time (SSRF / DNS-rebinding guard) — github.com/paaavkata/go-safedial.
+	client := safedial.NewVerificationHTTPClient(15 * time.Second)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return false, fmt.Sprintf("failed to build HTTP request: %v", err), nil

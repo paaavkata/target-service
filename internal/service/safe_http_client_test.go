@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/paaavkata/go-safedial"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -61,19 +62,30 @@ func TestSafeDialControl_PublicAddresses_Allowed(t *testing.T) {
 }
 
 func TestSafeDialControl_MalformedAddress_Refused(t *testing.T) {
-	// Fail-closed: anything that is not a parseable ip:port is refused.
-	for _, address := range []string{"not-an-ip:443", "203.0.113.10", "", "example.com:443"} {
+	// Fail-closed: anything that is not a parseable ip:port, and not a bare
+	// parseable IP, is refused.
+	//
+	// Behaviour note (go-safedial swap): the old hand-rolled safeDialControl
+	// refused ANY address net.SplitHostPort couldn't parse, including a
+	// portless bare IP like "203.0.113.10". safedial.Dialer.CheckAddress
+	// instead falls back to treating a portless string as a bare host when
+	// SplitHostPort fails, so a portless *public* IP is now evaluated (and
+	// allowed) rather than rejected as malformed — real net.Dialer.Control
+	// hooks always receive "ip:port", so this only matters for this synthetic
+	// unit test. Dropped from the table below; still covered as an "allowed"
+	// case via TestSafeDialControl_PublicAddresses_Allowed's ":443" form.
+	for _, address := range []string{"not-an-ip:443", "", "example.com:443"} {
 		err := safeDialControl("tcp", address, nil)
 		assert.Error(t, err, "malformed/non-IP address %q must be refused", address)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// newSafeVerificationClient — redirects are refused, dial guard is armed.
+// safedial.NewVerificationHTTPClient — redirects are refused, dial guard armed.
 // ---------------------------------------------------------------------------
 
 func TestNewSafeVerificationClient_RefusesRedirects(t *testing.T) {
-	client := newSafeVerificationClient(5 * time.Second)
+	client := safedial.NewVerificationHTTPClient(5 * time.Second)
 
 	// CheckRedirect must be set (a nil CheckRedirect means "follow up to 10
 	// redirects" — the exact SSRF hole this client exists to close).
@@ -89,7 +101,7 @@ func TestNewSafeVerificationClient_RefusesRedirects(t *testing.T) {
 }
 
 func TestNewSafeVerificationClient_TransportUsesGuardedDialer(t *testing.T) {
-	client := newSafeVerificationClient(5 * time.Second)
+	client := safedial.NewVerificationHTTPClient(5 * time.Second)
 	assert.Equal(t, 5*time.Second, client.Timeout, "overall time cap must be preserved")
 
 	transport, ok := client.Transport.(*http.Transport)
@@ -108,7 +120,7 @@ func TestNewSafeVerificationClient_RefusesInternalConnect(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := newSafeVerificationClient(5 * time.Second)
+	client := safedial.NewVerificationHTTPClient(5 * time.Second)
 	resp, err := client.Get(ts.URL)
 	if resp != nil {
 		resp.Body.Close()
