@@ -88,11 +88,9 @@ require (
 )
 
 replace (
-	github.com/paaavkata/go-config => ../shared-libs/go-config
 	github.com/paaavkata/go-db => ../shared-libs/go-db
 	github.com/paaavkata/go-events => ../shared-libs/go-events
 	github.com/paaavkata/go-logger => ../shared-libs/go-logger
-	github.com/paaavkata/go-middleware => ../shared-libs/go-middleware
 	github.com/paaavkata/go-nats => ../shared-libs/go-nats
 	github.com/paaavkata/go-server => ../shared-libs/go-server
 )

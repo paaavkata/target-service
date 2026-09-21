@@ -85,7 +85,7 @@ Verified directly against `cmd/target-service/main.go` (viper-based, `AutomaticE
 
 ## Shared-libs note
 
-The `go.mod` `replace` block points to `../shared-libs/go-X` (one level up, resolved via the `services/shared-libs` symlink to the workspace-level `backend_apps/shared-libs/`), not three levels up. Actually **imported** (per `require`, not just `replace`): `go-db`, `go-events`, `go-logger`, `go-nats` (v0.2.0), `go-server`. `go-config` and `go-middleware` have `replace` directives but no corresponding `require` entry and are not imported anywhere — dead/vestigial. CI/CD uses the published versions from the module proxy, not the local replace paths.
+The `go.mod` `replace` block points to `../shared-libs/go-X` (one level up, resolved via the `services/shared-libs` symlink to the workspace-level `backend_apps/shared-libs/`), not three levels up. It now covers exactly the imported (per `require`) libs: `go-db`, `go-events`, `go-logger`, `go-nats` (v0.2.0), `go-server`. The `go-config` and `go-middleware` replace directives were removed — neither had a corresponding `require` entry and neither is imported anywhere. CI/CD uses the published versions from the module proxy, not the local replace paths.
 
 ## Data
 
