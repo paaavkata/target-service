@@ -23,12 +23,10 @@ var IPTargetsEnabled = false
 var ErrIPTargetsUnsupported = errors.New("IP/CIDR targets are not yet supported (ownership verification for raw IP ranges is not implemented)")
 
 type targetService struct {
-	targetRepo repository.TargetRepositoryInterface
-	authRepo   repository.AuthorizationRepositoryInterface
-	verifier   *VerificationService
-	// kafkaProducer: naming leftover from before the Kafka→NATS migration; the
-	// field's type (producer.AuditProducer) actually wraps go-nats, not Kafka.
-	kafkaProducer *producer.AuditProducer
+	targetRepo    repository.TargetRepositoryInterface
+	authRepo      repository.AuthorizationRepositoryInterface
+	verifier      *VerificationService
+	auditProducer *producer.AuditProducer
 	appID         string
 }
 
@@ -37,14 +35,14 @@ func NewTargetService(
 	targetRepo repository.TargetRepositoryInterface,
 	authRepo repository.AuthorizationRepositoryInterface,
 	verifier *VerificationService,
-	kafkaProducer *producer.AuditProducer,
+	auditProducer *producer.AuditProducer,
 	appID string,
 ) TargetServiceInterface {
 	return &targetService{
 		targetRepo:    targetRepo,
 		authRepo:      authRepo,
 		verifier:      verifier,
-		kafkaProducer: kafkaProducer,
+		auditProducer: auditProducer,
 		appID:         appID,
 	}
 }
@@ -119,13 +117,13 @@ func (s *targetService) TriggerVerification(ctx context.Context, userID int64, u
 	ok, detail, verifyErr := s.verifier.RunCheck(ctx, t, auth)
 	if verifyErr != nil {
 		_ = s.targetRepo.UpdateStatus(ctx, t.ID, model.TargetStatusUnverified)
-		_ = s.kafkaProducer.EmitVerificationFailed(ctx, s.appID, t, detail)
+		_ = s.auditProducer.EmitVerificationFailed(ctx, s.appID, t, detail)
 		return nil, fmt.Errorf("targetService.TriggerVerification: check failed: %w", verifyErr)
 	}
 
 	if !ok {
 		_ = s.targetRepo.UpdateStatus(ctx, t.ID, model.TargetStatusUnverified)
-		_ = s.kafkaProducer.EmitVerificationFailed(ctx, s.appID, t, detail)
+		_ = s.auditProducer.EmitVerificationFailed(ctx, s.appID, t, detail)
 		return nil, fmt.Errorf("verification check did not pass: %s", detail)
 	}
 
@@ -137,7 +135,7 @@ func (s *targetService) TriggerVerification(ctx context.Context, userID int64, u
 		return nil, fmt.Errorf("targetService.TriggerVerification.UpdateStatus verified: %w", err)
 	}
 
-	_ = s.kafkaProducer.EmitTargetVerified(ctx, s.appID, t)
+	_ = s.auditProducer.EmitTargetVerified(ctx, s.appID, t)
 
 	// Re-fetch to get final state.
 	t, _ = s.targetRepo.GetByUID(ctx, userID, uid)

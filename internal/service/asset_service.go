@@ -9,11 +9,9 @@ import (
 )
 
 type assetService struct {
-	targetRepo repository.TargetRepositoryInterface
-	assetRepo  repository.AssetRepositoryInterface
-	// kafkaProducer: naming leftover from before the Kafka→NATS migration; the
-	// field's type (producer.AuditProducer) actually wraps go-nats, not Kafka.
-	kafkaProducer *producer.AuditProducer
+	targetRepo    repository.TargetRepositoryInterface
+	assetRepo     repository.AssetRepositoryInterface
+	auditProducer *producer.AuditProducer
 	appID         string
 }
 
@@ -21,13 +19,13 @@ type assetService struct {
 func NewAssetService(
 	targetRepo repository.TargetRepositoryInterface,
 	assetRepo repository.AssetRepositoryInterface,
-	kafkaProducer *producer.AuditProducer,
+	auditProducer *producer.AuditProducer,
 	appID string,
 ) AssetServiceInterface {
 	return &assetService{
 		targetRepo:    targetRepo,
 		assetRepo:     assetRepo,
-		kafkaProducer: kafkaProducer,
+		auditProducer: auditProducer,
 		appID:         appID,
 	}
 }
@@ -58,7 +56,7 @@ func (s *assetService) UpsertAssets(ctx context.Context, targetUID string, req *
 	}
 
 	// Emit scope_expanded audit event for new in-scope assets.
-	_ = s.kafkaProducer.EmitScopeExpanded(ctx, s.appID, target, len(upserted))
+	_ = s.auditProducer.EmitScopeExpanded(ctx, s.appID, target, len(upserted))
 
 	dtos := make([]model.AssetDTO, 0, len(upserted))
 	for _, a := range upserted {
