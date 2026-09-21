@@ -57,7 +57,7 @@ target-service/
 │   ├── model/                          # DB structs + request/response DTOs
 │   ├── store/                          # godb wrapper + SQL migrations
 │   │   └── sql/01_schema.sql           # idempotent DDL (schema: target)
-│   ├── middleware/                     # CORS + AppID middleware (AppID middleware defined but not wired, see below)
+│   ├── middleware/                     # CORS middleware (gateway also does CORS; this service's copy is redundant but harmless — no credentials with the wildcard origin)
 │   └── producer/                       # go-nats audit-events producer (wraps go-nats; field is still named `kafkaProducer` in service code — naming leftover from before the Kafka→NATS migration, not a real Kafka dependency)
 ├── helm/                               # Helm chart (parent: service-deployment-helm-chart)
 ├── gitops/                             # Argo CD Application manifests (dev + prod)
