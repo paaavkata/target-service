@@ -1,12 +1,14 @@
 # target-service
 
-**THE SAFETY BOUNDARY** for the Scantinel security-scanning platform.
+**THE SAFETY BOUNDARY** for the Scantinel security-scanning platform. **Layer: app-layer** (Scantinel-specific; holds a configured `APP_ID`, default `scantinel`, and only stamps it outbound — it does not thread inbound `X-App-Id` into its own authorization logic).
 
 This service owns target registration, proof-of-ownership verification, authorization scope, and the discovered asset inventory. No intrusive scan phase (port scans, credential-resilience tests, active web exploitation, AI agent probing) may proceed until `POST /internal/v1/scope/check` returns `{"authorized": true}`.
 
 ## Why it exists as a separate service
 
 Isolating the authorization gate makes it auditable and hard to accidentally bypass (see `06_AUTHORIZATION_AND_SAFETY.md`). Every other Scantinel service — especially `scan-service` and `agent-service` — is a client of this gate.
+
+The ownership-verification and scope-check gate is **verified real and load-bearing, not stubbed**: DNS TXT lookups, HTTP file fetch, and HTML meta-tag checks (`internal/service/verification_service.go`) perform real network calls; email/IP-registry methods honestly return "pending manual review" rather than faking success. The gate is fail-closed: `internal/service/safe_http_client.go` uses a `net.Dialer.Control` hook to reject dials to reserved/private/link-local/CGNAT IPs (including `169.254.0.0/16` cloud metadata) at connect time on the *already-resolved* address (closing the DNS-rebinding TOCTOU window), hard-refuses redirects, and disables the HTTP proxy. IP/CIDR targets are currently hard-disabled at creation (`IPTargetsEnabled = false` in `internal/service/target_service.go`) because real RIR registry-contact verification isn't implemented yet — attempting to create or authorize one returns 422, not a silent allow.
 
 ## Endpoints
 
@@ -55,8 +57,8 @@ target-service/
 │   ├── model/                          # DB structs + request/response DTOs
 │   ├── store/                          # godb wrapper + SQL migrations
 │   │   └── sql/01_schema.sql           # idempotent DDL (schema: target)
-│   ├── middleware/                     # CORS + AppID middleware
-│   └── producer/                       # go-kafka audit-events producer
+│   ├── middleware/                     # CORS + AppID middleware (AppID middleware defined but not wired, see below)
+│   └── producer/                       # go-nats audit-events producer (wraps go-nats; field is still named `kafkaProducer` in service code — naming leftover from before the Kafka→NATS migration, not a real Kafka dependency)
 ├── helm/                               # Helm chart (parent: service-deployment-helm-chart)
 ├── gitops/                             # Argo CD Application manifests (dev + prod)
 ├── Dockerfile                          # distroless build
@@ -68,30 +70,44 @@ target-service/
 
 | Variable | Example | Description |
 |---|---|---|
-| `APP_PORT` | `8080` | HTTP listen port |
-| `ENV` | `local\|dev\|prod` | Deployment environment |
-| `APP_ID` | `scantinel` | Platform app ID stamped on outbound calls |
-| `DB_URI` | `postgresql://target-service-user:…@host/db` | PostgreSQL connection string |
-| `KAFKA_BOOTSTRAP_SERVER` | `kafka:9092` | Kafka broker for audit-events |
-| `KAFKA_CLIENT_ID` | `target-service` | Kafka producer client ID |
-| `LOG_LEVEL` | `info` | Logger level |
-| `LOG_FORMAT` | `json` | Logger format |
+| `APP_PORT` | `8080` (default if unset) | HTTP listen port |
+| `DB_URI` | *(required, fatal if empty)* | PostgreSQL connection string |
+| `ENV` | — | Deployment environment |
+| `HOST` | — | External host, used in Swagger docs/verification links |
+| `LOG_LEVEL` | — | Logger level |
+| `LOG_FORMAT` | — | Logger format |
+| `APP_ID` | `scantinel` (default if unset) | App ID stamped on outbound NATS audit events; not threaded into own authorization logic |
+| `NATS_URL` | `nats://nats.data-dev:4222` (default if unset) | NATS JetStream connection URL |
+| `NATS_CLIENT_ID` | `target-service` (default if unset) | NATS client ID |
+| `AUDIT_TOPIC` | `audit-events` (default if unset) | NATS subject the audit producer publishes to |
+
+Verified directly against `cmd/target-service/main.go` (viper-based, `AutomaticEnv()`); the previous version of this table listed `KAFKA_BOOTSTRAP_SERVER`/`KAFKA_CLIENT_ID`, which do not exist in code — the broker is NATS JetStream via `go-nats`, not Kafka.
 
 ## Shared-libs note
 
-The `go.mod` uses `replace` directives pointing three levels up to `../../../shared-libs/`:
+The `go.mod` `replace` block points to `../shared-libs/go-X` (one level up, resolved via the `services/shared-libs` symlink to the workspace-level `backend_apps/shared-libs/`), not three levels up. Actually **imported** (per `require`, not just `replace`): `go-db`, `go-events`, `go-logger`, `go-nats` (v0.2.0), `go-server`. `go-config` and `go-middleware` have `replace` directives but no corresponding `require` entry and are not imported anywhere — dead/vestigial. CI/CD uses the published versions from the module proxy, not the local replace paths.
 
-```
-SecScanApp/services/target-service/  →  ../../../  →  backend_apps/shared-libs/
-```
+## Data
 
-This is correct for the workspace layout. CI/CD uses the published versions from the module proxy.
+Postgres, schema `target`, migrations auto-applied at startup from `internal/store/sql/01_schema.sql` (idempotent DDL). Key tables: targets, authorizations/scope grants (60-day expiry), discovered assets.
 
 ## Local development
 
 ```bash
-# Set DB_URI and Kafka in .secrets (gitignored), then:
+# Set DB_URI in a gitignored .secrets file (see local_start.sh header), then:
 bash local_start.sh
 ```
 
-Swagger UI available at `http://localhost:8080/swagger/index.html` in non-prod environments.
+This starts against a local NATS JetStream server (`docker run -p 4222:4222 nats -js`) and local Postgres — see `local_start.sh` for the exact env vars it exports. Run tests with `go test ./internal/... -short`. Swagger UI available at `http://localhost:8080/swagger/index.html` in non-prod environments (regenerate with `swag init -g main.go -d cmd/target-service,internal/handler,internal/model -o cmd/target-service/docs`).
+
+## Deployment
+
+GitOps: push to `main` → Argo Workflows `service-ci` → Kaniko → Zot (`registry.internal.cloudfusion.tech`) → bumps the `target-service` Application in `infra-gitops` (dev auto-deploys via Argo CD). Prod deployment is manual via the `promote-to-prod` workflow. See `ci/README.md` and `gitops/` for details. Helm chart parent: `service-deployment-helm-chart` (pinned 1.2.0/1.3.0-style; do not bump without coordinating).
+
+## Related docs
+
+- `06_AUTHORIZATION_AND_SAFETY.md` (SecScanApp top level) — design rationale for this gate; historical/design record, current behavior is documented above.
+- `plans/00-PRODUCTION-READINESS-MASTER-PLAN.md` — production-readiness checklist; the SSRF-hardening and IP-pinning items referencing this service are now implemented (see status banner in that doc).
+- `scantinel-scanner-images/verify/README.md` — describes a different, unused job-dispatch verification design; this service performs all verification in-process (see banner added to that README).
+
+_Last verified against code: 2026-09-21_

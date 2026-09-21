@@ -23,9 +23,11 @@ var IPTargetsEnabled = false
 var ErrIPTargetsUnsupported = errors.New("IP/CIDR targets are not yet supported (ownership verification for raw IP ranges is not implemented)")
 
 type targetService struct {
-	targetRepo    repository.TargetRepositoryInterface
-	authRepo      repository.AuthorizationRepositoryInterface
-	verifier      *VerificationService
+	targetRepo repository.TargetRepositoryInterface
+	authRepo   repository.AuthorizationRepositoryInterface
+	verifier   *VerificationService
+	// kafkaProducer: naming leftover from before the Kafka→NATS migration; the
+	// field's type (producer.AuditProducer) actually wraps go-nats, not Kafka.
 	kafkaProducer *producer.AuditProducer
 	appID         string
 }

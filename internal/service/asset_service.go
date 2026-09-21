@@ -9,8 +9,10 @@ import (
 )
 
 type assetService struct {
-	targetRepo    repository.TargetRepositoryInterface
-	assetRepo     repository.AssetRepositoryInterface
+	targetRepo repository.TargetRepositoryInterface
+	assetRepo  repository.AssetRepositoryInterface
+	// kafkaProducer: naming leftover from before the Kafka→NATS migration; the
+	// field's type (producer.AuditProducer) actually wraps go-nats, not Kafka.
 	kafkaProducer *producer.AuditProducer
 	appID         string
 }
