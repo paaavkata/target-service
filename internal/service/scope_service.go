@@ -105,8 +105,9 @@ func allowResult(reason string) *model.ScopeCheckResponse {
 //     – scope_kind=registrable_domain: the queried host must be the apex or a
 //     subdomain of the authorized registrable domain.
 //     – scope_kind=ip_range: the queried IP must fall within the authorized CIDR.
-//  4. Reject if the host/IP resolves to a known shared-infra range (even if it
-//     passes the registrable-domain check).
+//  4. For INTRUSIVE requests (req.Intrusive true or absent), reject if the
+//     host/IP resolves to a known shared-infra range (even if it passes the
+//     registrable-domain check). Non-intrusive requests may target a CDN edge.
 //  5. Deny by default — any ambiguity is a "not authorized" (conservative gate).
 //
 // Reasons returned by CheckVerified (stable tokens; scan-service logs them).
@@ -211,6 +212,14 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 	// later DNS answer that differs (rebinding guard).
 	var pinnedIPs []string
 
+	// 06 §3 forbids INTRUSIVE testing of shared infrastructure (CDN edges serve
+	// many tenants). A non-intrusive check (TLS audit, passive header/exposure
+	// templates) against a CDN-fronted host is allowed and pinned to the CDN
+	// edge IPs it resolved to. Reserved/private/metadata answers stay denied
+	// regardless (ResolveStrict / IsDeniedIP below). A request that does not
+	// state its intrusiveness is treated as intrusive.
+	intrusive := req.IsIntrusive()
+
 	// Shared-infra + reserved check for a directly-supplied IP.
 	if queryIP != "" {
 		ip := net.ParseIP(queryIP)
@@ -220,7 +229,7 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 		if denied, reason := safedial.IsDeniedIP(ip); denied {
 			return denyResult(fmt.Sprintf("IP %s is a private/reserved/internal address — refused (SSRF guard, 06 §3): %s", queryIP, reason)), nil
 		}
-		if isSharedInfra(ip) {
+		if intrusive && isSharedInfra(ip) {
 			return denyResult(fmt.Sprintf("IP %s belongs to a known shared-infrastructure range — intrusive testing is not permitted (06 §3)", queryIP)), nil
 		}
 		// Defense in depth for the ip/cidr hard-disable: an IP-scoped query can
@@ -248,7 +257,7 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 			return denyResult(fmt.Sprintf("host %q could not be resolved (%v) — refused (fail-closed)", queryHost, err)), nil
 		}
 		for _, ip := range resolvedIPs {
-			if isSharedInfra(ip) {
+			if intrusive && isSharedInfra(ip) {
 				return denyResult(fmt.Sprintf("host %q resolves to a shared-infrastructure IP (%s) — intrusive testing is not permitted (06 §3)", queryHost, ip.String())), nil
 			}
 			pinnedIPs = append(pinnedIPs, ip.String())

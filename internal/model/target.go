@@ -198,6 +198,18 @@ type ScopeCheckRequest struct {
 	Host  string `json:"host,omitempty"`
 	IP    string `json:"ip,omitempty"`
 	Phase string `json:"phase"      validate:"required"`
+	// Intrusive is the dispatching tool's intrusive flag from the scan check
+	// plan. Shared infrastructure (CDN ranges) is refused only for intrusive
+	// testing (06 §3), so a non-intrusive tool may be authorized against a
+	// CDN-fronted host. Reserved/private/metadata IPs are refused either way.
+	// Absent means intrusive: an old caller never gains CDN access by omission.
+	Intrusive *bool `json:"intrusive,omitempty"`
+}
+
+// IsIntrusive reports whether the request is for intrusive testing. A request
+// that does not say is treated as intrusive (fail closed).
+func (r *ScopeCheckRequest) IsIntrusive() bool {
+	return r.Intrusive == nil || *r.Intrusive
 }
 
 // ----------------------------------------------------------------------------

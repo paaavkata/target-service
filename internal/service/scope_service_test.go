@@ -631,3 +631,82 @@ func TestScopeCheck_Authorized_ReturnsPinnedIPs(t *testing.T) {
 	require.True(t, res.Authorized)
 	assert.ElementsMatch(t, []string{"203.0.113.10", "203.0.113.11"}, res.AllowedIPs)
 }
+
+// ---------------------------------------------------------------------------
+// Shared-infra (CDN) exclusion applies to INTRUSIVE testing only (06 §3).
+// ---------------------------------------------------------------------------
+
+func boolPtr(b bool) *bool { return &b }
+
+// A verified domain fronted by Cloudflare: a non-intrusive check is authorized
+// and pinned to the CDN edge IPs; an intrusive one (or one that does not say)
+// is still denied.
+func TestScopeCheck_SharedInfraHost_NonIntrusiveAllowed_IntrusiveDenied(t *testing.T) {
+	target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+	cf := func(string) ([]string, error) { return []string{"104.21.32.1", "172.67.1.1"}, nil }
+	auth := []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")}
+	svc := makeSvcWithResolver(target, auth, cf)
+
+	res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+		TargetUID: "uid-1", Host: "myapp.test", Phase: "web_vuln", Intrusive: boolPtr(false),
+	})
+	require.NoError(t, err)
+	require.True(t, res.Authorized, "non-intrusive check of a CDN-fronted host must be allowed: %s", res.Reason)
+	assert.ElementsMatch(t, []string{"104.21.32.1", "172.67.1.1"}, res.AllowedIPs)
+
+	res, err = svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+		TargetUID: "uid-1", Host: "myapp.test", Phase: "network", Intrusive: boolPtr(true),
+	})
+	require.NoError(t, err)
+	assert.False(t, res.Authorized, "intrusive check of shared infra must be denied")
+	assert.Contains(t, res.Reason, "shared-infrastructure")
+	assert.Empty(t, res.AllowedIPs)
+
+	res, err = svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+		TargetUID: "uid-1", Host: "myapp.test", Phase: "network",
+	})
+	require.NoError(t, err)
+	assert.False(t, res.Authorized, "a request that omits intrusive is treated as intrusive")
+}
+
+// Non-intrusive never unlocks reserved/private/metadata answers.
+func TestScopeCheck_NonIntrusive_ReservedStillDenied(t *testing.T) {
+	for name, answer := range map[string][]string{
+		"metadata":    {"169.254.169.254"},
+		"rfc1918":     {"10.0.0.5"},
+		"cdn+rfc1918": {"104.21.32.1", "192.168.1.1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+			r := func(string) ([]string, error) { return answer, nil }
+			svc := makeSvcWithResolver(target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")}, r)
+			res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+				TargetUID: "uid-1", Host: "myapp.test", Phase: "web_vuln", Intrusive: boolPtr(false),
+			})
+			require.NoError(t, err)
+			assert.False(t, res.Authorized, "%s must stay denied for a non-intrusive check", name)
+		})
+	}
+}
+
+// A directly-supplied CDN IP: non-intrusive passes the shared-infra check (and
+// is then subject to the ip/cidr hard-disable), intrusive is denied as shared infra.
+func TestScopeCheck_SharedInfraIP_NonIntrusive(t *testing.T) {
+	enableIPTargets(t)
+	target := verifiedTarget("uid-1", model.TargetKindCIDR, "104.16.0.0/13", "")
+	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindIPRange, "104.16.0.0/13")})
+
+	res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+		TargetUID: "uid-1", IP: "104.16.1.1", Phase: "web_vuln", Intrusive: boolPtr(false),
+	})
+	require.NoError(t, err)
+	require.True(t, res.Authorized, res.Reason)
+	assert.Equal(t, []string{"104.16.1.1"}, res.AllowedIPs)
+
+	res, err = svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+		TargetUID: "uid-1", IP: "104.16.1.1", Phase: "network", Intrusive: boolPtr(true),
+	})
+	require.NoError(t, err)
+	assert.False(t, res.Authorized)
+	assert.Contains(t, res.Reason, "shared-infrastructure")
+}
