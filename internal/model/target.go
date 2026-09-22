@@ -276,9 +276,17 @@ type AdminStatsResponse struct {
 // exists AND (when user_id is supplied) the caller owns the target. Reason is a
 // stable machine-readable token (verified | not_found | not_owner | not_verified |
 // no_active_authorization).
+//
+// Kind/Value/RegistrableDomain describe the target and are populated ONLY when
+// verified is true: scan-service uses them to point each scan task at the real
+// host (scan_tasks.target_asset) that the per-task scope gate then resolves.
+// They are never returned for a target the caller does not own.
 type VerifiedCheckResponse struct {
-	Verified bool   `json:"verified"`
-	Reason   string `json:"reason"`
+	Verified          bool   `json:"verified"`
+	Reason            string `json:"reason"`
+	Kind              string `json:"kind,omitempty"`
+	Value             string `json:"value,omitempty"`
+	RegistrableDomain string `json:"registrable_domain,omitempty"`
 }
 
 // AssetDTO is the external representation of an asset.

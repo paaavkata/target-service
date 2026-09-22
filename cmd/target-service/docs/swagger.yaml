@@ -317,7 +317,13 @@ definitions:
     type: object
   model.VerifiedCheckResponse:
     properties:
+      kind:
+        type: string
       reason:
+        type: string
+      registrable_domain:
+        type: string
+      value:
         type: string
       verified:
         type: boolean

@@ -26,6 +26,19 @@ func TestCheckVerified_OK(t *testing.T) {
 	res := checkVerified(t, target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "example.test")}, ptrInt64(5))
 	assert.True(t, res.Verified)
 	assert.Equal(t, service.VerifiedReasonOK, res.Reason)
+	// scan-service points its tasks at the target from these fields.
+	assert.Equal(t, model.TargetKindDomain, res.Kind)
+	assert.Equal(t, "example.test", res.Value)
+	assert.Equal(t, "example.test", res.RegistrableDomain)
+}
+
+func TestCheckVerified_SubdomainTarget_ReturnsHostAndRegistrableDomain(t *testing.T) {
+	target := verifiedTarget("uid-1", model.TargetKindDomain, "app.example.test", "example.test")
+	target.UserID = 5
+	res := checkVerified(t, target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "example.test")}, ptrInt64(5))
+	require.True(t, res.Verified)
+	assert.Equal(t, "app.example.test", res.Value)
+	assert.Equal(t, "example.test", res.RegistrableDomain)
 }
 
 func TestCheckVerified_NoUserID_SkipsOwnership(t *testing.T) {
@@ -41,6 +54,8 @@ func TestCheckVerified_OwnerMismatch(t *testing.T) {
 	res := checkVerified(t, target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "example.test")}, ptrInt64(6))
 	assert.False(t, res.Verified, "another user's verified target must not be scannable")
 	assert.Equal(t, service.VerifiedReasonNotOwner, res.Reason)
+	assert.Empty(t, res.Value, "a non-owner must not learn the target's host")
+	assert.Empty(t, res.Kind)
 }
 
 func TestCheckVerified_ExpiredAuthorization(t *testing.T) {

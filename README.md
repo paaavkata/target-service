@@ -54,7 +54,7 @@ Registered on the same Echo app behind `handler.RequireAdmin`: **403** `{status:
 | Method | Path | Callers | Description |
 |---|---|---|---|
 | `POST` | `/internal/v1/scope/check` | scan-service, agent-service | **The gate.** `{target_uid, host\|ip, phase}` → `{authorized, reason}`. |
-| `GET` | `/internal/v1/targets/{uid}/verified?user_id=` | scan-service (`StartScan`) | `{verified, reason}`; `verified` ⇔ `status=verified` **and** an active (verified, non-expired) authorization exists **and**, when `user_id` is given, it equals the owner (`reason: not_owner` otherwise). A missing target is a **200** `{verified:false, reason:"not_found"}` — scan-service treats non-200 as an outage. Reasons: `verified \| not_found \| not_owner \| not_verified \| no_active_authorization`. |
+| `GET` | `/internal/v1/targets/{uid}/verified?user_id=` | scan-service (`StartScan`) | `{verified, reason, kind, value, registrable_domain}` — `kind`/`value`/`registrable_domain` are set **only** when `verified` is true (scan-service writes them into `scan_tasks.target_asset` so the per-task scope gate resolves the real host); `verified` ⇔ `status=verified` **and** an active (verified, non-expired) authorization exists **and**, when `user_id` is given, it equals the owner (`reason: not_owner` otherwise). A missing target is a **200** `{verified:false, reason:"not_found"}` — scan-service treats non-200 as an outage. Reasons: `verified \| not_found \| not_owner \| not_verified \| no_active_authorization`. |
 | `POST` | `/internal/v1/targets/{uid}/assets` | scan-service | Upsert recon-discovered assets into inventory. |
 
 ## Scope model (06 §3)

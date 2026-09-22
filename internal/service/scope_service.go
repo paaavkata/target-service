@@ -143,7 +143,16 @@ func (s *scopeService) CheckVerified(ctx context.Context, targetUID string, user
 	if !hasActiveAuthorization(auths, time.Now()) {
 		return &model.VerifiedCheckResponse{Verified: false, Reason: VerifiedReasonNoActive}, nil
 	}
-	return &model.VerifiedCheckResponse{Verified: true, Reason: VerifiedReasonOK}, nil
+	res := &model.VerifiedCheckResponse{
+		Verified: true,
+		Reason:   VerifiedReasonOK,
+		Kind:     target.Kind,
+		Value:    target.Value,
+	}
+	if target.RegistrableDomain != nil {
+		res.RegistrableDomain = *target.RegistrableDomain
+	}
+	return res, nil
 }
 
 // hasActiveAuthorization re-checks verified_at/expires_at in Go even though the

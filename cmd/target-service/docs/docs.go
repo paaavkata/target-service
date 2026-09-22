@@ -1652,7 +1652,16 @@ const docTemplate = `{
         "model.VerifiedCheckResponse": {
             "type": "object",
             "properties": {
+                "kind": {
+                    "type": "string"
+                },
                 "reason": {
+                    "type": "string"
+                },
+                "registrable_domain": {
+                    "type": "string"
+                },
+                "value": {
                     "type": "string"
                 },
                 "verified": {
