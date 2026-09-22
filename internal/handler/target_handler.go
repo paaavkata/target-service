@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"target-service/internal/model"
 	"target-service/internal/service"
@@ -13,6 +14,21 @@ import (
 type TargetHandler struct {
 	svc    service.TargetServiceInterface
 	helper *HandlerHelper
+	cap    *service.TargetCapService // nil = no plan target cap
+}
+
+// PlanUpgradeRequiredData is the 403 data payload when a plan limit refuses a
+// request (shared shape with scan-service: code + plan + the limit hit).
+type PlanUpgradeRequiredData struct {
+	Code       string `json:"code" example:"plan_upgrade_required"`
+	Plan       string `json:"plan" example:"free"`
+	MaxTargets int    `json:"max_targets" example:"1"`
+}
+
+// WithTargetCap enables the per-plan target cap on POST /v1/targets.
+func (h *TargetHandler) WithTargetCap(c *service.TargetCapService) *TargetHandler {
+	h.cap = c
+	return h
 }
 
 // NewTargetHandler constructs the target handler.
@@ -36,9 +52,11 @@ func (h *TargetHandler) RegisterRoutes(g *echo.Group) {
 // @Accept       json
 // @Produce      json
 // @Param        X-User-Id  header    string                       true  "Authenticated user ID (stamped by Traefik)"
+// @Param        X-User-Plan header   string                       false "Caller's plan (stamped by Traefik / website); resolved via service-service when absent"
 // @Param        request    body      model.CreateTargetRequest    true  "Target registration payload"
 // @Success      201        {object}  model.Response{data=model.TargetDetailDTO}
 // @Failure      400        {object}  model.Response
+// @Failure      403        {object}  model.Response{data=handler.PlanUpgradeRequiredData}  "plan target cap reached (code=plan_upgrade_required)"
 // @Failure      409        {object}  model.Response  "duplicate (kind, value) for this user"
 // @Failure      422        {object}  model.Response  "IP/CIDR targets are not yet supported"
 // @Failure      500        {object}  model.Response
@@ -52,6 +70,19 @@ func (h *TargetHandler) Create(c echo.Context) error {
 	req := &model.CreateTargetRequest{}
 	if _, err := h.helper.Validate(c, req); err != nil {
 		return h.helper.PrepareResponse(c, http.StatusBadRequest, err.Error(), err, nil)
+	}
+
+	// Plan target cap (customer path only; admins bypass). Fails open when
+	// scan-service's entitlements are unreachable.
+	if h.cap != nil && !IsAdminRequest(c) {
+		ctx := c.Request().Context()
+		plan := h.cap.ResolvePlan(ctx, c.Request().Header.Get("X-User-Plan"), userID)
+		var capErr *service.TargetCapError
+		if err := h.cap.Check(ctx, userID, plan); errors.As(err, &capErr) {
+			msg := fmt.Sprintf("Your %s plan allows %d target(s). Upgrade your plan to add more.", capErr.Plan, capErr.MaxTargets)
+			return h.helper.PrepareResponse(c, http.StatusForbidden, msg, nil,
+				PlanUpgradeRequiredData{Code: "plan_upgrade_required", Plan: capErr.Plan, MaxTargets: capErr.MaxTargets})
+		}
 	}
 
 	dto, err := h.svc.CreateTarget(c.Request().Context(), userID, req)

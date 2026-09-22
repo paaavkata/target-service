@@ -864,6 +864,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "type": "string",
+                        "description": "Caller's plan (stamped by Traefik / website); resolved via service-service when absent",
+                        "name": "X-User-Plan",
+                        "in": "header"
+                    },
+                    {
                         "description": "Target registration payload",
                         "name": "request",
                         "in": "body",
@@ -896,6 +902,24 @@ const docTemplate = `{
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "plan target cap reached (code=plan_upgrade_required)",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/handler.PlanUpgradeRequiredData"
+                                        }
+                                    }
+                                }
+                            ]
                         }
                     },
                     "409": {
@@ -1168,6 +1192,23 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "handler.PlanUpgradeRequiredData": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "plan_upgrade_required"
+                },
+                "max_targets": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "plan": {
+                    "type": "string",
+                    "example": "free"
+                }
+            }
+        },
         "model.AdminAuthorizeTargetRequest": {
             "type": "object",
             "properties": {

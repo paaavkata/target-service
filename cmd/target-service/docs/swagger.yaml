@@ -1,4 +1,16 @@
 definitions:
+  handler.PlanUpgradeRequiredData:
+    properties:
+      code:
+        example: plan_upgrade_required
+        type: string
+      max_targets:
+        example: 1
+        type: integer
+      plan:
+        example: free
+        type: string
+    type: object
   model.AdminAuthorizeTargetRequest:
     properties:
       authorized_days:
@@ -881,6 +893,11 @@ paths:
         name: X-User-Id
         required: true
         type: string
+      - description: Caller's plan (stamped by Traefik / website); resolved via service-service
+          when absent
+        in: header
+        name: X-User-Plan
+        type: string
       - description: Target registration payload
         in: body
         name: request
@@ -903,6 +920,15 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/model.Response'
+        "403":
+          description: plan target cap reached (code=plan_upgrade_required)
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/handler.PlanUpgradeRequiredData'
+              type: object
         "409":
           description: duplicate (kind, value) for this user
           schema:

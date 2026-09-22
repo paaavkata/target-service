@@ -22,6 +22,7 @@ import (
 	"net/http"
 
 	_ "target-service/cmd/target-service/docs"
+	"target-service/internal/client"
 	"target-service/internal/handler"
 	"target-service/internal/middleware"
 	"target-service/internal/producer"
@@ -68,6 +69,16 @@ func main() {
 	natsClientID := viper.GetString("NATS_CLIENT_ID")
 	if natsClientID == "" {
 		natsClientID = "target-service"
+	}
+	// Plan entitlements (target cap): scan-service owns the matrix; service-service
+	// resolves a user's plan when X-User-Plan was not stamped.
+	scanServiceURL := viper.GetString("SCAN_SERVICE_URL")
+	if scanServiceURL == "" {
+		scanServiceURL = "http://scan-service.scantinel-dev"
+	}
+	serviceServiceURL := viper.GetString("SERVICE_SERVICE_URL")
+	if serviceServiceURL == "" {
+		serviceServiceURL = "http://service-service.platform-dev"
 	}
 	auditTopic := viper.GetString("AUDIT_TOPIC")
 	if auditTopic == "" {
@@ -156,7 +167,10 @@ func main() {
 	// ── 9. Handlers ───────────────────────────────────────────────────────────
 	v := validator.New()
 	handlerHelper := handler.NewHandlerHelper(v)
-	targetHandler := handler.NewTargetHandler(targetSvc, handlerHelper)
+	targetCap := service.NewTargetCapService(targetRepo,
+		client.NewEntitlementsClient(scanServiceURL, appID),
+		client.NewPlanResolver(serviceServiceURL, appID))
+	targetHandler := handler.NewTargetHandler(targetSvc, handlerHelper).WithTargetCap(targetCap)
 	assetHandler := handler.NewAssetHandler(assetSvc, handlerHelper)
 	adminHandler := handler.NewAdminHandler(targetSvc, handlerHelper)
 	internalHandler := handler.NewInternalHandler(scopeSvc, assetSvc, handlerHelper)

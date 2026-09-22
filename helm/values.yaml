@@ -56,6 +56,12 @@ parent:
       value: target-service
     - name: AUDIT_TOPIC
       value: audit-events
+    # Plan target cap: max_targets comes from scan-service (owner of
+    # plan_entitlements); the plan is X-User-Plan, else service-service rate-tier.
+    - name: SCAN_SERVICE_URL
+      value: http://scan-service.scantinel-dev
+    - name: SERVICE_SERVICE_URL
+      value: http://service-service.platform-dev
   secretEnvVars:
     - name: DB_URI
       # PGO-created secret: scantinel-<env>-pguser-target-service-user
