@@ -161,6 +161,62 @@ definitions:
     - kind
     - value
     type: object
+  model.DKIMSelectorResult:
+    properties:
+      present:
+        type: boolean
+      record:
+        type: string
+      selector:
+        type: string
+    type: object
+  model.DMARCResult:
+    properties:
+      policy:
+        description: none | quarantine | reject
+        type: string
+      present:
+        type: boolean
+      record:
+        type: string
+      rua_present:
+        type: boolean
+      warnings:
+        items:
+          type: string
+        type: array
+    type: object
+  model.EmailAuthResponse:
+    properties:
+      checked_at:
+        type: string
+      dkim:
+        items:
+          $ref: '#/definitions/model.DKIMSelectorResult'
+        type: array
+      dmarc:
+        $ref: '#/definitions/model.DMARCResult'
+      domain:
+        type: string
+      fixes:
+        items:
+          type: string
+        type: array
+      spf:
+        $ref: '#/definitions/model.SPFResult'
+    type: object
+  model.HeaderResult:
+    properties:
+      advice:
+        type: string
+      name:
+        type: string
+      status:
+        description: pass | warn | fail
+        type: string
+      value:
+        type: string
+    type: object
   model.ProgramEvidence:
     properties:
       authorized_days:
@@ -202,6 +258,22 @@ definitions:
         description: '"success" | "error"'
         type: string
     type: object
+  model.SPFResult:
+    properties:
+      lookup_count:
+        type: integer
+      present:
+        type: boolean
+      qualifier:
+        description: -all | ~all | ?all | +all | "" (none found)
+        type: string
+      record:
+        type: string
+      warnings:
+        items:
+          type: string
+        type: array
+    type: object
   model.ScopeCheckRequest:
     properties:
       host:
@@ -227,6 +299,57 @@ definitions:
         type: boolean
       reason:
         type: string
+    type: object
+  model.SecurityHeadersResponse:
+    properties:
+      checked_at:
+        type: string
+      domain:
+        type: string
+      final_url:
+        type: string
+      grade:
+        type: string
+      headers:
+        items:
+          $ref: '#/definitions/model.HeaderResult'
+        type: array
+    type: object
+  model.TLSCertificateInfo:
+    properties:
+      days_left:
+        type: integer
+      expires_at:
+        type: string
+      issuer:
+        type: string
+      subject:
+        type: string
+    type: object
+  model.TLSCheckResponse:
+    properties:
+      certificate:
+        $ref: '#/definitions/model.TLSCertificateInfo'
+      chain_valid_for_host:
+        type: boolean
+      checked_at:
+        type: string
+      cipher:
+        type: string
+      domain:
+        type: string
+      grade:
+        type: string
+      protocol:
+        type: string
+      reasons:
+        items:
+          type: string
+        type: array
+      tls10_accepted:
+        type: boolean
+      tls11_accepted:
+        type: boolean
     type: object
   model.TargetAdminDTO:
     properties:
@@ -305,6 +428,13 @@ definitions:
       verify_token:
         type: string
     type: object
+  model.ToolCheckRequest:
+    properties:
+      domain:
+        type: string
+    required:
+    - domain
+    type: object
   model.UpsertAssetsRequest:
     properties:
       assets:
@@ -340,6 +470,68 @@ definitions:
         type: string
     required:
     - method
+    type: object
+  model.WebsiteCheckDetails:
+    properties:
+      email_auth:
+        $ref: '#/definitions/model.EmailAuthResponse'
+      headers:
+        $ref: '#/definitions/model.SecurityHeadersResponse'
+      tls:
+        $ref: '#/definitions/model.TLSCheckResponse'
+    type: object
+  model.WebsiteCheckEmailSummary:
+    properties:
+      dmarc:
+        type: boolean
+      dmarcPolicy:
+        type: string
+      spf:
+        type: boolean
+    type: object
+  model.WebsiteCheckHeaderItem:
+    properties:
+      name:
+        type: string
+      status:
+        type: string
+    type: object
+  model.WebsiteCheckHeadersSummary:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/model.WebsiteCheckHeaderItem'
+        type: array
+      present:
+        type: integer
+      total:
+        type: integer
+    type: object
+  model.WebsiteCheckResponse:
+    properties:
+      checked_at:
+        type: string
+      details:
+        $ref: '#/definitions/model.WebsiteCheckDetails'
+      domain:
+        type: string
+      emailAuth:
+        $ref: '#/definitions/model.WebsiteCheckEmailSummary'
+      headers:
+        $ref: '#/definitions/model.WebsiteCheckHeadersSummary'
+      summary:
+        type: string
+      tls:
+        $ref: '#/definitions/model.WebsiteCheckTLSSummary'
+    type: object
+  model.WebsiteCheckTLSSummary:
+    properties:
+      certExpiry:
+        type: string
+      grade:
+        type: string
+      protocol:
+        type: string
     type: object
 info:
   contact:
@@ -1109,4 +1301,179 @@ paths:
       summary: Trigger ownership verification
       tags:
       - targets
+  /v1/tools/email-auth:
+    post:
+      consumes:
+      - application/json
+      description: Looks up SPF, DMARC and common-selector DKIM DNS records for the
+        domain and returns copy-paste fixes. Public, unauthenticated, rate-limited
+        to 10 requests/hour/IP.
+      parameters:
+      - description: Domain to check
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.ToolCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.EmailAuthResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/model.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Free SPF/DMARC/DKIM check
+      tags:
+      - tools
+  /v1/tools/security-headers:
+    post:
+      consumes:
+      - application/json
+      description: Fetches the domain's homepage and grades 8 key HTTP security headers.
+        Public, unauthenticated, rate-limited to 10 requests/hour/IP.
+      parameters:
+      - description: Domain to check
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.ToolCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.SecurityHeadersResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/model.Response'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/model.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Free security headers check
+      tags:
+      - tools
+  /v1/tools/tls:
+    post:
+      consumes:
+      - application/json
+      description: Performs a TLS handshake on port 443, inspects the certificate,
+        and checks whether TLS 1.0/1.1 are still accepted. Public, unauthenticated,
+        rate-limited to 10 requests/hour/IP.
+      parameters:
+      - description: Domain to check
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.ToolCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.TLSCheckResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/model.Response'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/model.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Free TLS/SSL check
+      tags:
+      - tools
+  /v1/tools/website-check:
+    post:
+      consumes:
+      - application/json
+      description: Runs the security-headers, TLS and email-auth checks concurrently
+        and returns a combined summary plus full details. Public, unauthenticated,
+        rate-limited to 10 requests/hour/IP.
+      parameters:
+      - description: Domain to check
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.ToolCheckRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.WebsiteCheckResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/model.Response'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/model.Response'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Free combined website security check
+      tags:
+      - tools
 swagger: "2.0"

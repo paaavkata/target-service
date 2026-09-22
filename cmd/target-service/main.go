@@ -163,6 +163,7 @@ func main() {
 	targetSvc := service.NewTargetService(targetRepo, authRepo, assetRepo, verifier, auditProducer, appID)
 	assetSvc := service.NewAssetService(targetRepo, assetRepo, auditProducer, appID)
 	scopeSvc := service.NewScopeService(targetRepo, authRepo)
+	toolsSvc := service.NewToolsService()
 
 	// ── 9. Handlers ───────────────────────────────────────────────────────────
 	v := validator.New()
@@ -174,12 +175,19 @@ func main() {
 	assetHandler := handler.NewAssetHandler(assetSvc, handlerHelper)
 	adminHandler := handler.NewAdminHandler(targetSvc, handlerHelper)
 	internalHandler := handler.NewInternalHandler(scopeSvc, assetSvc, handlerHelper)
+	toolsHandler := handler.NewToolsHandler(toolsSvc, handlerHelper)
 
 	// ── 10. Routes ────────────────────────────────────────────────────────────
 	// External (customer-facing) routes — routed by Traefik via /api/target (stripped).
 	v1 := e.Group("/v1")
 	targetHandler.RegisterRoutes(v1.Group("/targets"))
 	assetHandler.RegisterRoutes(v1.Group("/targets"))
+
+	// Public, unauthenticated free-tool endpoints backing scantinel-website's
+	// /tools/* pages (no X-User-Id / X-App-Id; self-rate-limited per IP — see
+	// internal/handler/tools_handler.go). The gateway routes these under the
+	// anonymous plan; the website also calls them in-namespace directly.
+	toolsHandler.RegisterRoutes(v1.Group("/tools"))
 
 	// Admin (platform-owner back office, plans/10-ADMIN-PANEL.md §3). RequireAdmin
 	// is the fail-closed second lock: 403 unless the gateway / in-cluster admin

@@ -49,6 +49,23 @@ Registered on the same Echo app behind `handler.RequireAdmin`: **403** `{status:
 
 `TargetAdminDTO` always carries `user_id`, `source` and `label` in addition to the customer `TargetDTO` fields, plus `authorization` (`uid, method, scope_kind, scope_value, verified_at, expires_at, attested_by, evidence`) and — on the detail route only — `assets`.
 
+### Public free tools (`/v1/tools`, no auth)
+
+Backs scantinel-website's `/tools/*` marketing pages (security headers checker, TLS/SSL checker, SPF/DMARC checker, and the combined website-security-check widget). **Unauthenticated by design** — no `X-User-Id`/`X-App-Id` is required or read, nothing is persisted, every check is a stateless outbound probe made through the same SSRF-safe `github.com/paaavkata/go-safedial` client used by ownership verification. The website calls these in-namespace (no gateway hop needed); the gateway would route them under an `anonymous` plan if fronted externally too (see "Gateway/service-service registration" below).
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/tools/security-headers` | `{domain}` → fetches `https://<domain>/` (falls back to `http://` on the first hop only), follows up to 3 redirects **restricted to the same registrable domain** and to public IPs (re-checked at every hop by go-safedial), grades 8 response headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, COOP, CORP) pass/warn/fail with a one-line fix each, and an overall `grade` (A–F). |
+| `POST` | `/v1/tools/tls` | `{domain}` → TLS handshake on port 443 via the pinned dialer: negotiated protocol/cipher, leaf certificate subject/issuer/expiry/days-left, chain validity for the hostname, and separate probes for whether TLS 1.0/1.1 are still accepted; graded A–F with reasons. |
+| `POST` | `/v1/tools/email-auth` | `{domain}` → DNS TXT lookups for SPF (parses the `-all`/`~all`/`?all`/`+all` qualifier and RFC 7208 lookup count, warns above 10), DMARC at `_dmarc.<domain>` (policy none/quarantine/reject, `rua=` presence), and DKIM presence across 9 common selectors (google, selector1, selector2, default, mail, dkim, k1, s1, s2) — each with copy-paste DNS record fixes. |
+| `POST` | `/v1/tools/website-check` | `{domain}` → runs the three checks above **concurrently**; returns the compact `{tls, headers, emailAuth, summary}` shape the website's `tool.tsx` renders directly, plus a `details` object with the full per-check responses. Partial failures (e.g. DNS times out) don't fail the whole request — only when all three checks fail does this 502. |
+
+**Input validation**: hostname only (scheme/userinfo/path/port stripped, lowercased, IDNA-safe regex) — IP literals, single-label names, `localhost`, and internal-looking TLDs (`.local`/`.internal`/…) are rejected with 400 before any network call (`internal/service/hostname.go`).
+
+**Abuse controls**: per-client-IP token bucket, 10 requests/hour (keyed by the first hop of `X-Forwarded-For`, else `X-Real-Ip`, else the connection's remote address) → `429` with `{data:{retry_after}}` seconds; a global in-flight cap of 16 concurrent checks across all clients → `503` when exhausted (`internal/handler/tools_handler.go`). Response bodies are read only to grade headers and are never logged.
+
+**Gateway/service-service registration (not done here — describe, don't edit prod-shared config)**: these 4 routes should be added to whatever table drives Traefik-plugin's per-route `access_level` (grep for how `/v1/targets` gets its access level — this repo has no local registry file, so that table lives in `service-service` and/or the gateway config in `infra-gitops`). The rows needed: `service=target-service`, `path_prefix=/v1/tools`, `methods=[POST]`, `access_level=public` (i.e. no JWT/API-key required, unlike every other `/v1/*` route here which needs at least `X-User-Id`). Until that registration exists, these endpoints are reachable only in-namespace (which is how scantinel-website calls them today) — not yet through the public `https://scantinel.ai` gateway host.
+
 ### Cluster-internal only (NetworkPolicy; NOT via Traefik)
 
 | Method | Path | Callers | Description |

@@ -1189,6 +1189,280 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/v1/tools/email-auth": {
+            "post": {
+                "description": "Looks up SPF, DMARC and common-selector DKIM DNS records for the domain and returns copy-paste fixes. Public, unauthenticated, rate-limited to 10 requests/hour/IP.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tools"
+                ],
+                "summary": "Free SPF/DMARC/DKIM check",
+                "parameters": [
+                    {
+                        "description": "Domain to check",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.ToolCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.EmailAuthResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/tools/security-headers": {
+            "post": {
+                "description": "Fetches the domain's homepage and grades 8 key HTTP security headers. Public, unauthenticated, rate-limited to 10 requests/hour/IP.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tools"
+                ],
+                "summary": "Free security headers check",
+                "parameters": [
+                    {
+                        "description": "Domain to check",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.ToolCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.SecurityHeadersResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/tools/tls": {
+            "post": {
+                "description": "Performs a TLS handshake on port 443, inspects the certificate, and checks whether TLS 1.0/1.1 are still accepted. Public, unauthenticated, rate-limited to 10 requests/hour/IP.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tools"
+                ],
+                "summary": "Free TLS/SSL check",
+                "parameters": [
+                    {
+                        "description": "Domain to check",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.ToolCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.TLSCheckResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/tools/website-check": {
+            "post": {
+                "description": "Runs the security-headers, TLS and email-auth checks concurrently and returns a combined summary plus full details. Public, unauthenticated, rate-limited to 10 requests/hour/IP.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tools"
+                ],
+                "summary": "Free combined website security check",
+                "parameters": [
+                    {
+                        "description": "Domain to check",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.ToolCheckRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.WebsiteCheckResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1423,6 +1697,91 @@ const docTemplate = `{
                 }
             }
         },
+        "model.DKIMSelectorResult": {
+            "type": "object",
+            "properties": {
+                "present": {
+                    "type": "boolean"
+                },
+                "record": {
+                    "type": "string"
+                },
+                "selector": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.DMARCResult": {
+            "type": "object",
+            "properties": {
+                "policy": {
+                    "description": "none | quarantine | reject",
+                    "type": "string"
+                },
+                "present": {
+                    "type": "boolean"
+                },
+                "record": {
+                    "type": "string"
+                },
+                "rua_present": {
+                    "type": "boolean"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "model.EmailAuthResponse": {
+            "type": "object",
+            "properties": {
+                "checked_at": {
+                    "type": "string"
+                },
+                "dkim": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DKIMSelectorResult"
+                    }
+                },
+                "dmarc": {
+                    "$ref": "#/definitions/model.DMARCResult"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "fixes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "spf": {
+                    "$ref": "#/definitions/model.SPFResult"
+                }
+            }
+        },
+        "model.HeaderResult": {
+            "type": "object",
+            "properties": {
+                "advice": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "pass | warn | fail",
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
         "model.ProgramEvidence": {
             "type": "object",
             "required": [
@@ -1478,6 +1837,30 @@ const docTemplate = `{
                 }
             }
         },
+        "model.SPFResult": {
+            "type": "object",
+            "properties": {
+                "lookup_count": {
+                    "type": "integer"
+                },
+                "present": {
+                    "type": "boolean"
+                },
+                "qualifier": {
+                    "description": "-all | ~all | ?all | +all | \"\" (none found)",
+                    "type": "string"
+                },
+                "record": {
+                    "type": "string"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "model.ScopeCheckRequest": {
             "type": "object",
             "required": [
@@ -1514,6 +1897,84 @@ const docTemplate = `{
                 },
                 "reason": {
                     "type": "string"
+                }
+            }
+        },
+        "model.SecurityHeadersResponse": {
+            "type": "object",
+            "properties": {
+                "checked_at": {
+                    "type": "string"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "final_url": {
+                    "type": "string"
+                },
+                "grade": {
+                    "type": "string"
+                },
+                "headers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.HeaderResult"
+                    }
+                }
+            }
+        },
+        "model.TLSCertificateInfo": {
+            "type": "object",
+            "properties": {
+                "days_left": {
+                    "type": "integer"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "subject": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.TLSCheckResponse": {
+            "type": "object",
+            "properties": {
+                "certificate": {
+                    "$ref": "#/definitions/model.TLSCertificateInfo"
+                },
+                "chain_valid_for_host": {
+                    "type": "boolean"
+                },
+                "checked_at": {
+                    "type": "string"
+                },
+                "cipher": {
+                    "type": "string"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "grade": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tls10_accepted": {
+                    "type": "boolean"
+                },
+                "tls11_accepted": {
+                    "type": "boolean"
                 }
             }
         },
@@ -1634,6 +2095,17 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ToolCheckRequest": {
+            "type": "object",
+            "required": [
+                "domain"
+            ],
+            "properties": {
+                "domain": {
+                    "type": "string"
+                }
+            }
+        },
         "model.UpsertAssetsRequest": {
             "type": "object",
             "required": [
@@ -1684,6 +2156,102 @@ const docTemplate = `{
                         "email",
                         "ip_registry"
                     ]
+                }
+            }
+        },
+        "model.WebsiteCheckDetails": {
+            "type": "object",
+            "properties": {
+                "email_auth": {
+                    "$ref": "#/definitions/model.EmailAuthResponse"
+                },
+                "headers": {
+                    "$ref": "#/definitions/model.SecurityHeadersResponse"
+                },
+                "tls": {
+                    "$ref": "#/definitions/model.TLSCheckResponse"
+                }
+            }
+        },
+        "model.WebsiteCheckEmailSummary": {
+            "type": "object",
+            "properties": {
+                "dmarc": {
+                    "type": "boolean"
+                },
+                "dmarcPolicy": {
+                    "type": "string"
+                },
+                "spf": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "model.WebsiteCheckHeaderItem": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.WebsiteCheckHeadersSummary": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.WebsiteCheckHeaderItem"
+                    }
+                },
+                "present": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.WebsiteCheckResponse": {
+            "type": "object",
+            "properties": {
+                "checked_at": {
+                    "type": "string"
+                },
+                "details": {
+                    "$ref": "#/definitions/model.WebsiteCheckDetails"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "emailAuth": {
+                    "$ref": "#/definitions/model.WebsiteCheckEmailSummary"
+                },
+                "headers": {
+                    "$ref": "#/definitions/model.WebsiteCheckHeadersSummary"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "tls": {
+                    "$ref": "#/definitions/model.WebsiteCheckTLSSummary"
+                }
+            }
+        },
+        "model.WebsiteCheckTLSSummary": {
+            "type": "object",
+            "properties": {
+                "certExpiry": {
+                    "type": "string"
+                },
+                "grade": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
                 }
             }
         }
