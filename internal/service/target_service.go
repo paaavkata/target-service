@@ -7,6 +7,7 @@ import (
 	"target-service/internal/model"
 	"target-service/internal/producer"
 	"target-service/internal/repository"
+	"time"
 )
 
 // IPTargetsEnabled hard-disables ip/cidr target kinds (06 §2 gap): real
@@ -22,18 +23,51 @@ var IPTargetsEnabled = false
 // requested while IPTargetsEnabled is false. Handlers map it to a 4xx.
 var ErrIPTargetsUnsupported = errors.New("IP/CIDR targets are not yet supported (ownership verification for raw IP ranges is not implemented)")
 
+// ErrTargetNotFound is returned by the admin methods when the uid does not exist.
+var ErrTargetNotFound = errors.New("target not found")
+
+// ErrTargetAdminAuthorized is returned when a customer runs the ownership challenge on a
+// target whose authorization was granted by an administrator (bug-bounty program or manual
+// attestation). Those targets have no challenge token, so "verifying" them can only demote
+// them; the handler maps this to 409.
+var ErrTargetAdminAuthorized = errors.New("this target was authorized by an administrator; the ownership challenge does not apply")
+
+// ErrTargetExists is returned when (user_id, kind, value) is already registered.
+var ErrTargetExists = errors.New("target already exists for this user")
+
+// CustomerAuthorizationTTL is how long a challenge-proven authorization stays
+// valid before the customer must re-verify (06 §2 recommends 30–90 days).
+const CustomerAuthorizationTTL = 60 * 24 * time.Hour
+
+// DefaultAdminAuthorizedDays is the authorization lifetime for program/manual
+// authorizations when the admin does not pass authorized_days.
+const DefaultAdminAuthorizedDays = 90
+
+// checkKindAllowed is the single ip/cidr hard-disable gate shared by the
+// customer Create and the admin CreateProgramTarget paths. It runs BEFORE
+// anything is persisted.
+func checkKindAllowed(kind string) error {
+	if (kind == model.TargetKindIP || kind == model.TargetKindCIDR) && !IPTargetsEnabled {
+		return ErrIPTargetsUnsupported
+	}
+	return nil
+}
+
 type targetService struct {
 	targetRepo    repository.TargetRepositoryInterface
 	authRepo      repository.AuthorizationRepositoryInterface
+	assetRepo     repository.AssetRepositoryInterface
 	verifier      *VerificationService
 	auditProducer *producer.AuditProducer
 	appID         string
 }
 
-// NewTargetService constructs the target domain service.
+// NewTargetService constructs the target domain service. assetRepo is only
+// used by the admin detail route and may be nil in tests that don't exercise it.
 func NewTargetService(
 	targetRepo repository.TargetRepositoryInterface,
 	authRepo repository.AuthorizationRepositoryInterface,
+	assetRepo repository.AssetRepositoryInterface,
 	verifier *VerificationService,
 	auditProducer *producer.AuditProducer,
 	appID string,
@@ -41,6 +75,7 @@ func NewTargetService(
 	return &targetService{
 		targetRepo:    targetRepo,
 		authRepo:      authRepo,
+		assetRepo:     assetRepo,
 		verifier:      verifier,
 		auditProducer: auditProducer,
 		appID:         appID,
@@ -50,12 +85,15 @@ func NewTargetService(
 func (s *targetService) CreateTarget(ctx context.Context, userID int64, req *model.CreateTargetRequest) (*model.TargetDetailDTO, error) {
 	// Hard-disable ip/cidr targets BEFORE anything is persisted: their ownership
 	// verification is not implemented (see IPTargetsEnabled).
-	if (req.Kind == model.TargetKindIP || req.Kind == model.TargetKindCIDR) && !IPTargetsEnabled {
-		return nil, ErrIPTargetsUnsupported
+	if err := checkKindAllowed(req.Kind); err != nil {
+		return nil, err
 	}
 
 	t, err := s.targetRepo.Create(ctx, userID, req)
 	if err != nil {
+		if errors.Is(err, repository.ErrDuplicateTarget) {
+			return nil, ErrTargetExists
+		}
 		return nil, fmt.Errorf("targetService.CreateTarget: %w", err)
 	}
 
@@ -99,8 +137,14 @@ func (s *targetService) TriggerVerification(ctx context.Context, userID int64, u
 		return nil, fmt.Errorf("targetService.TriggerVerification: target not found: %w", err)
 	}
 
-	// Get or create an authorization record with a challenge token.
+	// Admin-authorized targets (program / manual) carry no challenge token: running the
+	// check would hit RunCheck's unknown-method branch and demote the target to unverified.
 	auth, err := s.authRepo.GetByTargetID(ctx, t.ID)
+	if t.Source == model.TargetSourceProgram ||
+		(auth != nil && (auth.Method == model.VerificationMethodProgram || auth.Method == model.VerificationMethodManual)) {
+		return nil, ErrTargetAdminAuthorized
+	}
+	// Get or create an authorization record with a challenge token.
 	if err != nil || auth == nil {
 		// Issue a new challenge for the requested method.
 		auth, _, err = s.verifier.IssueChallenge(ctx, t, req.Method, userID)
@@ -128,7 +172,7 @@ func (s *targetService) TriggerVerification(ctx context.Context, userID int64, u
 	}
 
 	// Record successful verification with 60-day expiry.
-	if err := s.authRepo.MarkVerified(ctx, auth.ID, "now() + interval '60 days'"); err != nil {
+	if err := s.authRepo.MarkVerified(ctx, auth.ID, time.Now().Add(CustomerAuthorizationTTL), nil); err != nil {
 		return nil, fmt.Errorf("targetService.TriggerVerification.MarkVerified: %w", err)
 	}
 	if err := s.targetRepo.UpdateStatus(ctx, t.ID, model.TargetStatusVerified); err != nil {
@@ -185,9 +229,38 @@ func targetToDTO(t *model.Target) model.TargetDTO {
 		Value:             t.Value,
 		RegistrableDomain: t.RegistrableDomain,
 		Status:            t.Status,
+		Source:            t.Source,
+		Label:             t.Label,
 		CreatedAt:         t.CreatedAt,
 		UpdatedAt:         t.UpdatedAt,
 	}
+}
+
+// authorizationToDTO is the customer-facing projection: it deliberately omits attested_by
+// and evidence (the admin's program record / free-text note), which only the admin DTO shows.
+func authorizationToDTO(auth *model.Authorization) *model.AuthorizationDTO {
+	if auth == nil {
+		return nil
+	}
+	return &model.AuthorizationDTO{
+		UID:        auth.UID,
+		Method:     auth.Method,
+		ScopeKind:  auth.ScopeKind,
+		ScopeValue: auth.ScopeValue,
+		VerifiedAt: auth.VerifiedAt,
+		ExpiresAt:  auth.ExpiresAt,
+	}
+}
+
+// authorizationToAdminDTO adds the admin-only audit fields on top of authorizationToDTO.
+func authorizationToAdminDTO(auth *model.Authorization) *model.AuthorizationDTO {
+	dto := authorizationToDTO(auth)
+	if dto == nil {
+		return nil
+	}
+	dto.AttestedBy = auth.AttestedBy
+	dto.Evidence = auth.Evidence
+	return dto
 }
 
 func targetToDetailDTO(t *model.Target, auth *model.Authorization, token *string, instructions *string) *model.TargetDetailDTO {
@@ -201,15 +274,6 @@ func targetToDetailDTO(t *model.Target, auth *model.Authorization, token *string
 			return ""
 		}(),
 	}
-	if auth != nil {
-		dto.Authorization = &model.AuthorizationDTO{
-			UID:        auth.UID,
-			Method:     auth.Method,
-			ScopeKind:  auth.ScopeKind,
-			ScopeValue: auth.ScopeValue,
-			VerifiedAt: auth.VerifiedAt,
-			ExpiresAt:  auth.ExpiresAt,
-		}
-	}
+	dto.Authorization = authorizationToDTO(auth)
 	return dto
 }

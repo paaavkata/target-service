@@ -37,7 +37,7 @@ func makeTargetSvc(repo *fakeCreateTargetRepo) service.TargetServiceInterface {
 	authRepo := &fakeAuthRepoForVerification{}
 	verifier := service.NewVerificationService(authRepo)
 	// nil producer is safe: CreateTarget never touches the audit producer.
-	return service.NewTargetService(repo, authRepo, verifier, nil, "secscan")
+	return service.NewTargetService(repo, authRepo, nil, verifier, nil, "secscan")
 }
 
 // ---------------------------------------------------------------------------

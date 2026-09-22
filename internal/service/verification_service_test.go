@@ -34,11 +34,14 @@ func (r *fakeAuthRepoForVerification) GetByTargetID(_ context.Context, _ int64) 
 func (r *fakeAuthRepoForVerification) GetPendingByToken(_ context.Context, _ string) (*model.Authorization, error) {
 	return nil, nil
 }
-func (r *fakeAuthRepoForVerification) MarkVerified(_ context.Context, _ int64, _ string) error {
+func (r *fakeAuthRepoForVerification) MarkVerified(_ context.Context, _ int64, _ time.Time, _ map[string]interface{}) error {
 	return nil
 }
 func (r *fakeAuthRepoForVerification) GetActiveAuthorizations(_ context.Context, _ int64) ([]model.Authorization, error) {
 	return nil, nil
+}
+func (r *fakeAuthRepoForVerification) ExpireActiveAuthorizations(_ context.Context, _ int64) (int64, error) {
+	return 0, nil
 }
 
 // ---------------------------------------------------------------------------

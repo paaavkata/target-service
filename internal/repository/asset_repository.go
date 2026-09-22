@@ -54,10 +54,24 @@ func (r *assetRepository) ListByTargetUID(ctx context.Context, userID int64, tar
 		JOIN target.targets t ON t.id = a.target_id
 		WHERE t.uid = $1 AND t.user_id = $2
 		ORDER BY a.first_seen DESC`
+	return r.list(ctx, "ListByTargetUID", query, targetUID, userID)
+}
 
-	rows, err := r.db.Query(ctx, query, targetUID, userID)
+// ListByTargetID lists a target's assets without user scoping (admin detail).
+func (r *assetRepository) ListByTargetID(ctx context.Context, targetID int64) ([]model.Asset, error) {
+	query := `
+		SELECT a.id, a.uid, a.target_id, a.asset_type, a.value, a.parent_asset_id,
+		       a.scope_class, a.metadata, a.discovered_by, a.first_seen, a.last_seen
+		FROM target.assets a
+		WHERE a.target_id = $1
+		ORDER BY a.first_seen DESC`
+	return r.list(ctx, "ListByTargetID", query, targetID)
+}
+
+func (r *assetRepository) list(ctx context.Context, op, query string, args ...interface{}) ([]model.Asset, error) {
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("assetRepository.ListByTargetUID: %w", err)
+		return nil, fmt.Errorf("assetRepository.%s: %w", op, err)
 	}
 	defer rows.Close()
 
@@ -69,12 +83,15 @@ func (r *assetRepository) ListByTargetUID(ctx context.Context, userID int64, tar
 			&a.ID, &a.UID, &a.TargetID, &a.AssetType, &a.Value, &a.ParentAssetID,
 			&a.ScopeClass, &metaRaw, &a.DiscoveredBy, &a.FirstSeen, &a.LastSeen,
 		); err != nil {
-			return nil, fmt.Errorf("assetRepository.ListByTargetUID scan: %w", err)
+			return nil, fmt.Errorf("assetRepository.%s scan: %w", op, err)
 		}
 		if len(metaRaw) > 0 {
 			_ = json.Unmarshal(metaRaw, &a.Metadata)
 		}
 		assets = append(assets, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("assetRepository.%s rows: %w", op, err)
 	}
 	return assets, nil
 }

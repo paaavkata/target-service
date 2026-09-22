@@ -1,4 +1,73 @@
 definitions:
+  model.AdminAuthorizeTargetRequest:
+    properties:
+      authorized_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      note:
+        maxLength: 4000
+        type: string
+    type: object
+  model.AdminCreateProgramTargetRequest:
+    properties:
+      kind:
+        enum:
+        - domain
+        - url
+        - ip
+        - cidr
+        type: string
+      label:
+        maxLength: 255
+        type: string
+      program:
+        $ref: '#/definitions/model.ProgramEvidence'
+      user_id:
+        description: defaults to the admin's own X-User-Id
+        minimum: 1
+        type: integer
+      value:
+        maxLength: 512
+        minLength: 1
+        type: string
+    required:
+    - kind
+    - program
+    - value
+    type: object
+  model.AdminRevokeTargetRequest:
+    properties:
+      reason:
+        maxLength: 4000
+        type: string
+    type: object
+  model.AdminStatsResponse:
+    properties:
+      by_source:
+        additionalProperties:
+          type: integer
+        type: object
+      by_status:
+        additionalProperties:
+          type: integer
+        type: object
+      total:
+        type: integer
+    type: object
+  model.AdminTargetListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/model.TargetAdminDTO'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
   model.AssetDTO:
     properties:
       asset_type:
@@ -44,6 +113,12 @@ definitions:
     type: object
   model.AuthorizationDTO:
     properties:
+      attested_by:
+        type: integer
+      evidence:
+        additionalProperties: true
+        description: Evidence is only populated for program/manual authorizations.
+        type: object
       expires_at:
         type: string
       method:
@@ -74,6 +149,38 @@ definitions:
     - kind
     - value
     type: object
+  model.ProgramEvidence:
+    properties:
+      authorized_days:
+        maximum: 365
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
+      platform:
+        enum:
+        - hackerone
+        - bugcrowd
+        - intigriti
+        - yeswehack
+        - other
+        type: string
+      policy_url:
+        maxLength: 2048
+        type: string
+      scope_notes:
+        maxLength: 4000
+        type: string
+      url:
+        maxLength: 2048
+        type: string
+    required:
+    - name
+    - platform
+    - url
+    type: object
   model.Response:
     properties:
       data: {}
@@ -100,9 +207,42 @@ definitions:
     type: object
   model.ScopeCheckResponse:
     properties:
+      allowed_ips:
+        items:
+          type: string
+        type: array
       authorized:
         type: boolean
       reason:
+        type: string
+    type: object
+  model.TargetAdminDTO:
+    properties:
+      assets:
+        items:
+          $ref: '#/definitions/model.AssetDTO'
+        type: array
+      authorization:
+        $ref: '#/definitions/model.AuthorizationDTO'
+      created_at:
+        type: string
+      kind:
+        type: string
+      label:
+        type: string
+      registrable_domain:
+        type: string
+      source:
+        type: string
+      status:
+        type: string
+      uid:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+      value:
         type: string
     type: object
   model.TargetDTO:
@@ -111,7 +251,11 @@ definitions:
         type: string
       kind:
         type: string
+      label:
+        type: string
       registrable_domain:
+        type: string
+      source:
         type: string
       status:
         type: string
@@ -130,7 +274,11 @@ definitions:
         type: string
       kind:
         type: string
+      label:
+        type: string
       registrable_domain:
+        type: string
+      source:
         type: string
       status:
         type: string
@@ -154,6 +302,13 @@ definitions:
         type: array
     required:
     - assets
+    type: object
+  model.VerifiedCheckResponse:
+    properties:
+      reason:
+        type: string
+      verified:
+        type: boolean
     type: object
   model.VerifyTargetRequest:
     properties:
@@ -264,6 +419,411 @@ paths:
       summary: Upsert discovered assets (INTERNAL)
       tags:
       - internal
+  /internal/v1/targets/{target_uid}/verified:
+    get:
+      description: 'Cluster-only. verified ⇔ target status is "verified" AND an active
+        (verified, non-expired) authorization exists AND, when user_id is supplied,
+        the target belongs to that user (reason "not_owner" otherwise). Reasons: verified
+        | not_found | not_owner | not_verified | no_active_authorization.'
+      parameters:
+      - description: Target UID
+        in: path
+        name: target_uid
+        required: true
+        type: string
+      - description: Requesting user's platform id; when set, ownership is enforced
+        in: query
+        name: user_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.VerifiedCheckResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Target verification + ownership check (INTERNAL)
+      tags:
+      - internal
+  /v1/admin/stats:
+    get:
+      description: '`{total, by_status: {…}, by_source: {…}}` across all users.'
+      parameters:
+      - description: Must be \
+        in: header
+        name: X-Is-Admin
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.AdminStatsResponse'
+              type: object
+        "403":
+          description: admin only
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Target counts (ADMIN)
+      tags:
+      - admin
+  /v1/admin/targets:
+    get:
+      description: Cross-user paged list. Unknown filter values return 400. `q` is
+        a case-insensitive substring match on value or label.
+      parameters:
+      - description: Must be \
+        in: header
+        name: X-Is-Admin
+        required: true
+        type: string
+      - description: Filter by owner
+        in: query
+        name: user_id
+        type: integer
+      - description: unverified|verifying|verified|revoked
+        in: query
+        name: status
+        type: string
+      - description: customer|program
+        in: query
+        name: source
+        type: string
+      - description: Substring match on value/label
+        in: query
+        name: q
+        type: string
+      - description: Page number (default 1)
+        in: query
+        name: page
+        type: integer
+      - description: Page size (default 50, max 200)
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.AdminTargetListResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "403":
+          description: admin only
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: List targets across all users (ADMIN)
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      description: Registers a target as verified with a method=program authorization
+        whose evidence is the public program. user_id defaults to the admin's X-User-Id;
+        authorized_days 1..365 (default 90). Value rules match POST /v1/targets (ip/cidr
+        still refused while IP targets are disabled).
+      parameters:
+      - description: Must be \
+        in: header
+        name: X-Is-Admin
+        required: true
+        type: string
+      - description: Admin's platform user id (audit actor, default owner)
+        in: header
+        name: X-User-Id
+        required: true
+        type: string
+      - description: Program target payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.AdminCreateProgramTargetRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.TargetAdminDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "403":
+          description: admin only
+          schema:
+            $ref: '#/definitions/model.Response'
+        "409":
+          description: duplicate (user_id, kind, value)
+          schema:
+            $ref: '#/definitions/model.Response'
+        "422":
+          description: IP/CIDR targets are not yet supported
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Create a bug-bounty program target (ADMIN)
+      tags:
+      - admin
+  /v1/admin/targets/{target_uid}:
+    delete:
+      description: Removes the target with its authorizations and asset inventory
+        regardless of owner.
+      parameters:
+      - description: Must be \
+        in: header
+        name: X-Is-Admin
+        required: true
+        type: string
+      - description: Admin's platform user id (audit actor)
+        in: header
+        name: X-User-Id
+        required: true
+        type: string
+      - description: Target UID
+        in: path
+        name: target_uid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "403":
+          description: admin only
+          schema:
+            $ref: '#/definitions/model.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Delete any user's target (ADMIN)
+      tags:
+      - admin
+    get:
+      description: Target detail with its current authorization (incl. evidence) and
+        asset inventory, regardless of owner.
+      parameters:
+      - description: Must be \
+        in: header
+        name: X-Is-Admin
+        required: true
+        type: string
+      - description: Target UID
+        in: path
+        name: target_uid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.TargetAdminDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "403":
+          description: admin only
+          schema:
+            $ref: '#/definitions/model.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Get any user's target (ADMIN)
+      tags:
+      - admin
+  /v1/admin/targets/{target_uid}/authorize:
+    post:
+      consumes:
+      - application/json
+      description: Confirms a pending challenge (email / ip_registry) if one exists,
+        otherwise records a method=manual authorization with evidence {note}. Sets
+        status=verified. authorized_days 1..365 (default 90).
+      parameters:
+      - description: Must be \
+        in: header
+        name: X-Is-Admin
+        required: true
+        type: string
+      - description: Admin's platform user id (audit actor, attested_by)
+        in: header
+        name: X-User-Id
+        required: true
+        type: string
+      - description: Target UID
+        in: path
+        name: target_uid
+        required: true
+        type: string
+      - description: Note + lifetime
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.AdminAuthorizeTargetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.TargetAdminDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "403":
+          description: admin only
+          schema:
+            $ref: '#/definitions/model.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Response'
+        "422":
+          description: IP/CIDR targets are not yet supported
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Manually mark a target verified (ADMIN)
+      tags:
+      - admin
+  /v1/admin/targets/{target_uid}/revoke:
+    post:
+      consumes:
+      - application/json
+      description: Sets status=revoked and expires every active authorization immediately,
+        so the scope gate denies every new intrusive task.
+      parameters:
+      - description: Must be \
+        in: header
+        name: X-Is-Admin
+        required: true
+        type: string
+      - description: Admin's platform user id (audit actor)
+        in: header
+        name: X-User-Id
+        required: true
+        type: string
+      - description: Target UID
+        in: path
+        name: target_uid
+        required: true
+        type: string
+      - description: Reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.AdminRevokeTargetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.TargetAdminDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "403":
+          description: admin only
+          schema:
+            $ref: '#/definitions/model.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Revoke a target (ADMIN kill switch)
+      tags:
+      - admin
   /v1/targets:
     get:
       description: Return a paged list of targets owned by the authenticated user.
@@ -341,6 +901,14 @@ paths:
               type: object
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "409":
+          description: duplicate (kind, value) for this user
+          schema:
+            $ref: '#/definitions/model.Response'
+        "422":
+          description: IP/CIDR targets are not yet supported
           schema:
             $ref: '#/definitions/model.Response'
         "500":

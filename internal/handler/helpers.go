@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"target-service/internal/model"
 
 	"github.com/go-playground/validator/v10"
@@ -14,7 +15,45 @@ import (
 const (
 	DefaultPageSize = 10
 	MaxPageSize     = 100
+
+	// Admin list routes use the platform-wide admin paging defaults
+	// (plans/10-ADMIN-PANEL.md §2): page_size default 50, max 200.
+	AdminDefaultPageSize = 50
+	AdminMaxPageSize     = 200
 )
+
+// adminRoles are the role names that count as platform admin (Keycloak realm
+// roles admin/owner → gateway X-Is-Admin, PERMISSIONS_STRATEGY.md §1).
+var adminRoles = map[string]bool{"owner": true, "admin": true}
+
+// IsAdminRequest reports whether the gateway stamped platform-admin identity on this request.
+// Both headers are trusted BECAUSE the traefik-plugin strips any client-supplied copy before
+// re-stamping them from the verified JWT — and it never stamps them on the API-key path, so an
+// API key can never reach an admin-only route. In-cluster callers (scantinel-website's admin
+// panel) self-stamp them after checking the Keycloak token. Nothing here may be read from the
+// body or the query string. Copied from identity-service/internal/handler/helpers.go.
+func IsAdminRequest(c echo.Context) bool {
+	if strings.EqualFold(strings.TrimSpace(c.Request().Header.Get("X-Is-Admin")), "true") {
+		return true
+	}
+	for _, role := range strings.Split(c.Request().Header.Get("X-User-Roles"), ",") {
+		if adminRoles[strings.ToLower(strings.TrimSpace(role))] {
+			return true
+		}
+	}
+	return false
+}
+
+// RequireAdmin is the fail-closed second lock on /v1/admin/* routes: 403 with the
+// standard envelope {status:"error", message:"admin only"} unless IsAdminRequest.
+func RequireAdmin(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if !IsAdminRequest(c) {
+			return c.JSON(http.StatusForbidden, model.Response{Status: "error", Message: "admin only"})
+		}
+		return next(c)
+	}
+}
 
 // HandlerHelper holds the shared validator instance and response helpers.
 type HandlerHelper struct {
@@ -77,6 +116,23 @@ func (h *HandlerHelper) UserIDFromHeader(c echo.Context) (int64, error) {
 		return 0, fmt.Errorf("X-User-Id must be a positive integer")
 	}
 	return id, nil
+}
+
+// AdminPagingParams normalises page/page_size for admin list routes
+// (1-based page, default 1; page_size default 50, max 200).
+func (h *HandlerHelper) AdminPagingParams(pageNumber, pageSize string) (int, int) {
+	page, _ := strconv.Atoi(pageNumber)
+	if page < 1 {
+		page = 1
+	}
+	size, _ := strconv.Atoi(pageSize)
+	if size < 1 {
+		size = AdminDefaultPageSize
+	}
+	if size > AdminMaxPageSize {
+		size = AdminMaxPageSize
+	}
+	return page, size
 }
 
 // ValidatePagingParams normalises page/size with safe defaults.

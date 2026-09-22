@@ -39,6 +39,7 @@ func (h *TargetHandler) RegisterRoutes(g *echo.Group) {
 // @Param        request    body      model.CreateTargetRequest    true  "Target registration payload"
 // @Success      201        {object}  model.Response{data=model.TargetDetailDTO}
 // @Failure      400        {object}  model.Response
+// @Failure      409        {object}  model.Response  "duplicate (kind, value) for this user"
 // @Failure      422        {object}  model.Response  "IP/CIDR targets are not yet supported"
 // @Failure      500        {object}  model.Response
 // @Router       /v1/targets [post]
@@ -59,6 +60,9 @@ func (h *TargetHandler) Create(c echo.Context) error {
 		// verification exists — a clear client error, not a 500.
 		if errors.Is(err, service.ErrIPTargetsUnsupported) {
 			return h.helper.PrepareResponse(c, http.StatusUnprocessableEntity, err.Error(), err, nil)
+		}
+		if errors.Is(err, service.ErrTargetExists) {
+			return h.helper.PrepareResponse(c, http.StatusConflict, err.Error(), err, nil)
 		}
 		return h.helper.PrepareResponse(c, http.StatusInternalServerError, "Failed to register target", err, nil)
 	}
@@ -170,6 +174,9 @@ func (h *TargetHandler) Verify(c echo.Context) error {
 
 	dto, err := h.svc.TriggerVerification(c.Request().Context(), userID, uid, req)
 	if err != nil {
+		if errors.Is(err, service.ErrTargetAdminAuthorized) {
+			return h.helper.PrepareResponse(c, http.StatusConflict, err.Error(), err, nil)
+		}
 		return h.helper.PrepareResponse(c, http.StatusBadRequest, "Verification did not pass: "+err.Error(), err, nil)
 	}
 	return h.helper.PrepareResponse(c, http.StatusOK, "Verification complete", nil, dto)

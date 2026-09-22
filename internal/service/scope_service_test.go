@@ -23,6 +23,21 @@ type fakeTargetRepo struct {
 func (r *fakeTargetRepo) Create(_ context.Context, _ int64, _ *model.CreateTargetRequest) (*model.Target, error) {
 	return nil, errors.New("not used in scope tests")
 }
+func (r *fakeTargetRepo) CreateProgram(_ context.Context, _ int64, _, _, _ string) (*model.Target, error) {
+	return nil, errors.New("not used in scope tests")
+}
+func (r *fakeTargetRepo) Count(_ context.Context, _ model.SearchParameters) (int64, error) {
+	return 0, errors.New("not used in scope tests")
+}
+func (r *fakeTargetRepo) CountByStatus(_ context.Context) (map[string]int64, error) {
+	return nil, errors.New("not used in scope tests")
+}
+func (r *fakeTargetRepo) CountBySource(_ context.Context) (map[string]int64, error) {
+	return nil, errors.New("not used in scope tests")
+}
+func (r *fakeTargetRepo) DeleteByUID(_ context.Context, _ string) error {
+	return nil
+}
 func (r *fakeTargetRepo) GetByUID(_ context.Context, _ int64, _ string) (*model.Target, error) {
 	return nil, errors.New("not used in scope tests")
 }
@@ -58,11 +73,14 @@ func (r *fakeAuthRepo) GetByTargetID(_ context.Context, _ int64) (*model.Authori
 func (r *fakeAuthRepo) GetPendingByToken(_ context.Context, _ string) (*model.Authorization, error) {
 	return nil, errors.New("not used in scope tests")
 }
-func (r *fakeAuthRepo) MarkVerified(_ context.Context, _ int64, _ string) error {
+func (r *fakeAuthRepo) MarkVerified(_ context.Context, _ int64, _ time.Time, _ map[string]interface{}) error {
 	return nil
 }
 func (r *fakeAuthRepo) GetActiveAuthorizations(_ context.Context, targetID int64) ([]model.Authorization, error) {
 	return r.auths[targetID], nil
+}
+func (r *fakeAuthRepo) ExpireActiveAuthorizations(_ context.Context, _ int64) (int64, error) {
+	return 0, errors.New("not used in scope tests")
 }
 
 // ---------------------------------------------------------------------------

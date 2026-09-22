@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"target-service/internal/model"
 	"target-service/internal/service"
 
@@ -33,7 +34,46 @@ func NewInternalHandler(
 // RegisterRoutes wires internal routes onto the given echo.Group (/internal/v1).
 func (h *InternalHandler) RegisterRoutes(g *echo.Group) {
 	g.POST("/scope/check", h.ScopeCheck)
+	g.GET("/targets/:target_uid/verified", h.IsVerified)
 	g.POST("/targets/:target_uid/assets", h.UpsertAssets)
+}
+
+// IsVerified is the scan-launch ownership gate consulted by scan-service
+// StartScan. It always answers 200 for a well-formed request — including a
+// missing target ({verified:false, reason:"not_found"}) — because scan-service
+// treats any non-200 as a target-service outage rather than a denial.
+//
+// IsVerified godoc
+// @Summary      Target verification + ownership check (INTERNAL)
+// @Description  Cluster-only. verified ⇔ target status is "verified" AND an active (verified, non-expired) authorization exists AND, when user_id is supplied, the target belongs to that user (reason "not_owner" otherwise). Reasons: verified | not_found | not_owner | not_verified | no_active_authorization.
+// @Tags         internal
+// @Produce      json
+// @Param        target_uid  path      string  true   "Target UID"
+// @Param        user_id     query     int     false  "Requesting user's platform id; when set, ownership is enforced"
+// @Success      200         {object}  model.Response{data=model.VerifiedCheckResponse}
+// @Failure      400         {object}  model.Response
+// @Failure      500         {object}  model.Response
+// @Router       /internal/v1/targets/{target_uid}/verified [get]
+func (h *InternalHandler) IsVerified(c echo.Context) error {
+	uid := c.Param("target_uid")
+	if err := h.helper.ValidateUID("target_uid", uid); err != nil {
+		return h.helper.PrepareResponse(c, http.StatusBadRequest, err.Error(), err, nil)
+	}
+
+	var userID *int64
+	if raw := c.QueryParam("user_id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id < 1 {
+			return h.helper.PrepareResponse(c, http.StatusBadRequest, "user_id must be a positive integer", nil, nil)
+		}
+		userID = &id
+	}
+
+	result, err := h.scopeSvc.CheckVerified(c.Request().Context(), uid, userID)
+	if err != nil {
+		return h.helper.PrepareResponse(c, http.StatusInternalServerError, "Verification check failed", err, nil)
+	}
+	return h.helper.PrepareResponse(c, http.StatusOK, "Verification check complete", nil, result)
 }
 
 // ScopeCheck is the authorization gate — the most critical endpoint in the service.

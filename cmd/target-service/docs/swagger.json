@@ -142,6 +142,626 @@
                 }
             }
         },
+        "/internal/v1/targets/{target_uid}/verified": {
+            "get": {
+                "description": "Cluster-only. verified ⇔ target status is \"verified\" AND an active (verified, non-expired) authorization exists AND, when user_id is supplied, the target belongs to that user (reason \"not_owner\" otherwise). Reasons: verified | not_found | not_owner | not_verified | no_active_authorization.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "internal"
+                ],
+                "summary": "Target verification + ownership check (INTERNAL)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Target UID",
+                        "name": "target_uid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Requesting user's platform id; when set, ownership is enforced",
+                        "name": "user_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.VerifiedCheckResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/stats": {
+            "get": {
+                "description": "`{total, by_status: {…}, by_source: {…}}` across all users.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Target counts (ADMIN)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Must be \\",
+                        "name": "X-Is-Admin",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.AdminStatsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "admin only",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/targets": {
+            "get": {
+                "description": "Cross-user paged list. Unknown filter values return 400. `q` is a case-insensitive substring match on value or label.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List targets across all users (ADMIN)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Must be \\",
+                        "name": "X-Is-Admin",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by owner",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "unverified|verifying|verified|revoked",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "customer|program",
+                        "name": "source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Substring match on value/label",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number (default 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.AdminTargetListResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "admin only",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Registers a target as verified with a method=program authorization whose evidence is the public program. user_id defaults to the admin's X-User-Id; authorized_days 1..365 (default 90). Value rules match POST /v1/targets (ip/cidr still refused while IP targets are disabled).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Create a bug-bounty program target (ADMIN)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Must be \\",
+                        "name": "X-Is-Admin",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Admin's platform user id (audit actor, default owner)",
+                        "name": "X-User-Id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Program target payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.AdminCreateProgramTargetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.TargetAdminDTO"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "admin only",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "duplicate (user_id, kind, value)",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "422": {
+                        "description": "IP/CIDR targets are not yet supported",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/targets/{target_uid}": {
+            "get": {
+                "description": "Target detail with its current authorization (incl. evidence) and asset inventory, regardless of owner.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get any user's target (ADMIN)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Must be \\",
+                        "name": "X-Is-Admin",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Target UID",
+                        "name": "target_uid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.TargetAdminDTO"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "admin only",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes the target with its authorizations and asset inventory regardless of owner.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Delete any user's target (ADMIN)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Must be \\",
+                        "name": "X-Is-Admin",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Admin's platform user id (audit actor)",
+                        "name": "X-User-Id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Target UID",
+                        "name": "target_uid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "admin only",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/targets/{target_uid}/authorize": {
+            "post": {
+                "description": "Confirms a pending challenge (email / ip_registry) if one exists, otherwise records a method=manual authorization with evidence {note}. Sets status=verified. authorized_days 1..365 (default 90).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Manually mark a target verified (ADMIN)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Must be \\",
+                        "name": "X-Is-Admin",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Admin's platform user id (audit actor, attested_by)",
+                        "name": "X-User-Id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Target UID",
+                        "name": "target_uid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Note + lifetime",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.AdminAuthorizeTargetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.TargetAdminDTO"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "admin only",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "422": {
+                        "description": "IP/CIDR targets are not yet supported",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/admin/targets/{target_uid}/revoke": {
+            "post": {
+                "description": "Sets status=revoked and expires every active authorization immediately, so the scope gate denies every new intrusive task.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Revoke a target (ADMIN kill switch)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Must be \\",
+                        "name": "X-Is-Admin",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Admin's platform user id (audit actor)",
+                        "name": "X-User-Id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Target UID",
+                        "name": "target_uid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.AdminRevokeTargetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.TargetAdminDTO"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "admin only",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/targets": {
             "get": {
                 "description": "Return a paged list of targets owned by the authenticated user.",
@@ -266,6 +886,18 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "duplicate (kind, value) for this user",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "422": {
+                        "description": "IP/CIDR targets are not yet supported",
                         "schema": {
                             "$ref": "#/definitions/model.Response"
                         }
@@ -528,6 +1160,105 @@
         }
     },
     "definitions": {
+        "model.AdminAuthorizeTargetRequest": {
+            "type": "object",
+            "properties": {
+                "authorized_days": {
+                    "type": "integer",
+                    "maximum": 365,
+                    "minimum": 1
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 4000
+                }
+            }
+        },
+        "model.AdminCreateProgramTargetRequest": {
+            "type": "object",
+            "required": [
+                "kind",
+                "program",
+                "value"
+            ],
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "domain",
+                        "url",
+                        "ip",
+                        "cidr"
+                    ]
+                },
+                "label": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "program": {
+                    "$ref": "#/definitions/model.ProgramEvidence"
+                },
+                "user_id": {
+                    "description": "defaults to the admin's own X-User-Id",
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "value": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "minLength": 1
+                }
+            }
+        },
+        "model.AdminRevokeTargetRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "maxLength": 4000
+                }
+            }
+        },
+        "model.AdminStatsResponse": {
+            "type": "object",
+            "properties": {
+                "by_source": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "by_status": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.AdminTargetListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.TargetAdminDTO"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.AssetDTO": {
             "type": "object",
             "properties": {
@@ -592,6 +1323,14 @@
         "model.AuthorizationDTO": {
             "type": "object",
             "properties": {
+                "attested_by": {
+                    "type": "integer"
+                },
+                "evidence": {
+                    "description": "Evidence is only populated for program/manual authorizations.",
+                    "type": "object",
+                    "additionalProperties": true
+                },
                 "expires_at": {
                     "type": "string"
                 },
@@ -635,6 +1374,48 @@
                 }
             }
         },
+        "model.ProgramEvidence": {
+            "type": "object",
+            "required": [
+                "name",
+                "platform",
+                "url"
+            ],
+            "properties": {
+                "authorized_days": {
+                    "type": "integer",
+                    "maximum": 365,
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                },
+                "platform": {
+                    "type": "string",
+                    "enum": [
+                        "hackerone",
+                        "bugcrowd",
+                        "intigriti",
+                        "yeswehack",
+                        "other"
+                    ]
+                },
+                "policy_url": {
+                    "type": "string",
+                    "maxLength": 2048
+                },
+                "scope_notes": {
+                    "type": "string",
+                    "maxLength": 4000
+                },
+                "url": {
+                    "type": "string",
+                    "maxLength": 2048
+                }
+            }
+        },
         "model.Response": {
             "type": "object",
             "properties": {
@@ -673,10 +1454,60 @@
         "model.ScopeCheckResponse": {
             "type": "object",
             "properties": {
+                "allowed_ips": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "authorized": {
                     "type": "boolean"
                 },
                 "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.TargetAdminDTO": {
+            "type": "object",
+            "properties": {
+                "assets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.AssetDTO"
+                    }
+                },
+                "authorization": {
+                    "$ref": "#/definitions/model.AuthorizationDTO"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "registrable_domain": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "uid": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "value": {
                     "type": "string"
                 }
             }
@@ -690,7 +1521,13 @@
                 "kind": {
                     "type": "string"
                 },
+                "label": {
+                    "type": "string"
+                },
                 "registrable_domain": {
+                    "type": "string"
+                },
+                "source": {
                     "type": "string"
                 },
                 "status": {
@@ -719,7 +1556,13 @@
                 "kind": {
                     "type": "string"
                 },
+                "label": {
+                    "type": "string"
+                },
                 "registrable_domain": {
+                    "type": "string"
+                },
+                "source": {
                     "type": "string"
                 },
                 "status": {
@@ -754,6 +1597,17 @@
                     "items": {
                         "$ref": "#/definitions/model.AssetUpsertItem"
                     }
+                }
+            }
+        },
+        "model.VerifiedCheckResponse": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "verified": {
+                    "type": "boolean"
                 }
             }
         },

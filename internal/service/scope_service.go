@@ -11,6 +11,7 @@ import (
 	"strings"
 	"target-service/internal/model"
 	"target-service/internal/repository"
+	"time"
 
 	"github.com/paaavkata/go-safedial"
 )
@@ -107,6 +108,65 @@ func allowResult(reason string) *model.ScopeCheckResponse {
 //  4. Reject if the host/IP resolves to a known shared-infra range (even if it
 //     passes the registrable-domain check).
 //  5. Deny by default — any ambiguity is a "not authorized" (conservative gate).
+//
+// Reasons returned by CheckVerified (stable tokens; scan-service logs them).
+const (
+	VerifiedReasonOK          = "verified"
+	VerifiedReasonNotFound    = "not_found"
+	VerifiedReasonNotOwner    = "not_owner"
+	VerifiedReasonNotVerified = "not_verified"
+	VerifiedReasonNoActive    = "no_active_authorization"
+)
+
+// CheckVerified is the scan-launch ownership gate consulted by scan-service
+// StartScan (plans/10-ADMIN-PANEL.md §3). It is deliberately weaker than
+// CheckScope (no host/IP evaluation) — CheckScope still runs per task.
+func (s *scopeService) CheckVerified(ctx context.Context, targetUID string, userID *int64) (*model.VerifiedCheckResponse, error) {
+	target, err := s.targetRepo.GetByUIDInternal(ctx, targetUID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) || isLookupMiss(err) {
+			return &model.VerifiedCheckResponse{Verified: false, Reason: VerifiedReasonNotFound}, nil
+		}
+		return nil, fmt.Errorf("scopeService.CheckVerified: %w", err)
+	}
+	// Ownership first: a caller must never learn the state of someone else's target.
+	if userID != nil && *userID != target.UserID {
+		return &model.VerifiedCheckResponse{Verified: false, Reason: VerifiedReasonNotOwner}, nil
+	}
+	if target.Status != model.TargetStatusVerified {
+		return &model.VerifiedCheckResponse{Verified: false, Reason: VerifiedReasonNotVerified}, nil
+	}
+	auths, err := s.authRepo.GetActiveAuthorizations(ctx, target.ID)
+	if err != nil {
+		return nil, fmt.Errorf("scopeService.CheckVerified: %w", err)
+	}
+	if !hasActiveAuthorization(auths, time.Now()) {
+		return &model.VerifiedCheckResponse{Verified: false, Reason: VerifiedReasonNoActive}, nil
+	}
+	return &model.VerifiedCheckResponse{Verified: true, Reason: VerifiedReasonOK}, nil
+}
+
+// hasActiveAuthorization re-checks verified_at/expires_at in Go even though the
+// repository already filters in SQL — defense in depth for the launch gate.
+func hasActiveAuthorization(auths []model.Authorization, now time.Time) bool {
+	for _, a := range auths {
+		if a.VerifiedAt == nil {
+			continue
+		}
+		if a.ExpiresAt != nil && !a.ExpiresAt.After(now) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// isLookupMiss treats any repository "not found" flavour (including test fakes
+// that return a plain error) as a miss rather than an outage.
+func isLookupMiss(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
 func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequest) (*model.ScopeCheckResponse, error) {
 	if req.Host == "" && req.IP == "" {
 		return denyResult("host or ip is required"), nil

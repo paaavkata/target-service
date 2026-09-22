@@ -149,7 +149,7 @@ func main() {
 
 	// ── 8. Services ───────────────────────────────────────────────────────────
 	verifier := service.NewVerificationService(authRepo)
-	targetSvc := service.NewTargetService(targetRepo, authRepo, verifier, auditProducer, appID)
+	targetSvc := service.NewTargetService(targetRepo, authRepo, assetRepo, verifier, auditProducer, appID)
 	assetSvc := service.NewAssetService(targetRepo, assetRepo, auditProducer, appID)
 	scopeSvc := service.NewScopeService(targetRepo, authRepo)
 
@@ -158,6 +158,7 @@ func main() {
 	handlerHelper := handler.NewHandlerHelper(v)
 	targetHandler := handler.NewTargetHandler(targetSvc, handlerHelper)
 	assetHandler := handler.NewAssetHandler(assetSvc, handlerHelper)
+	adminHandler := handler.NewAdminHandler(targetSvc, handlerHelper)
 	internalHandler := handler.NewInternalHandler(scopeSvc, assetSvc, handlerHelper)
 
 	// ── 10. Routes ────────────────────────────────────────────────────────────
@@ -165,6 +166,11 @@ func main() {
 	v1 := e.Group("/v1")
 	targetHandler.RegisterRoutes(v1.Group("/targets"))
 	assetHandler.RegisterRoutes(v1.Group("/targets"))
+
+	// Admin (platform-owner back office, plans/10-ADMIN-PANEL.md §3). RequireAdmin
+	// is the fail-closed second lock: 403 unless the gateway / in-cluster admin
+	// panel stamped X-Is-Admin: true or an admin/owner role in X-User-Roles.
+	adminHandler.RegisterRoutes(e.Group("/v1/admin", handler.RequireAdmin))
 
 	// Internal (cluster-only) routes — not exposed via Traefik ingress.
 	// Secured by Kubernetes NetworkPolicy; no additional auth middleware.
