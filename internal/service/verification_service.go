@@ -52,6 +52,25 @@ func (v *VerificationService) IssueChallenge(ctx context.Context, target *model.
 	return created, token, nil
 }
 
+// SwitchMethod records a new pending challenge for method that reuses prev's token and scope,
+// so an owner who already published the token for one method can prove control with another.
+// The new row becomes the target's latest authorization (GetByTargetID orders by created_at).
+func (v *VerificationService) SwitchMethod(ctx context.Context, target *model.Target, prev *model.Authorization, method string) (*model.Authorization, error) {
+	scopeKind, scopeValue := scopeForTarget(target)
+	created, err := v.authRepo.Create(ctx, &model.Authorization{
+		TargetID:   target.ID,
+		Method:     method,
+		Token:      prev.Token,
+		ScopeKind:  scopeKind,
+		ScopeValue: scopeValue,
+		AttestedBy: prev.AttestedBy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("verificationService.SwitchMethod: persist: %w", err)
+	}
+	return created, nil
+}
+
 // RunCheck dispatches to the correct per-method verifier and returns
 // (passed, detail, error).
 func (v *VerificationService) RunCheck(ctx context.Context, target *model.Target, auth *model.Authorization) (bool, string, error) {

@@ -128,6 +128,21 @@ func (s *targetService) GetTarget(ctx context.Context, userID int64, uid string)
 		return nil, fmt.Errorf("targetService.GetTarget: %w", err)
 	}
 	auth, _ := s.authRepo.GetByTargetID(ctx, t.ID)
+	if auth == nil && t.Status != model.TargetStatusVerified && t.Source != model.TargetSourceProgram {
+		// The challenge issued at create time failed (non-fatal there): issue one now so the
+		// owner always has a token to publish.
+		if issued, _, err := s.verifier.IssueChallenge(ctx, t, defaultMethodForKind(t.Kind), userID); err == nil {
+			auth = issued
+		}
+	}
+	// While the target is not verified the owner needs the challenge token on every read of
+	// the detail page, not only in the create response (which a browser flow never keeps).
+	// The token is the caller's own (GetByUID is user-scoped) and is useless once verified.
+	if t.Status != model.TargetStatusVerified && auth != nil && isChallengeMethod(auth.Method) && auth.Token != "" {
+		token := auth.Token
+		instructions := buildInstructions(auth.Method, token, t)
+		return targetToDetailDTO(t, auth, &token, &instructions), nil
+	}
 	return targetToDetailDTO(t, auth, nil, nil), nil
 }
 
@@ -150,6 +165,15 @@ func (s *targetService) TriggerVerification(ctx context.Context, userID int64, u
 		auth, _, err = s.verifier.IssueChallenge(ctx, t, req.Method, userID)
 		if err != nil {
 			return nil, fmt.Errorf("targetService.TriggerVerification.IssueChallenge: %w", err)
+		}
+	} else if req.Method != auth.Method && isChallengeMethod(req.Method) && isChallengeMethod(auth.Method) && auth.Token != "" {
+		// The owner picked a different method than the one the challenge was issued for
+		// (create always issues dns_txt). RunCheck dispatches on auth.Method, so without this
+		// the HTTP-file and meta-tag checks silently ran the DNS check. The token is
+		// method-independent: keep the one the owner has already published.
+		auth, err = s.verifier.SwitchMethod(ctx, t, auth, req.Method)
+		if err != nil {
+			return nil, fmt.Errorf("targetService.TriggerVerification.SwitchMethod: %w", err)
 		}
 	}
 
@@ -207,12 +231,25 @@ func defaultMethodForKind(kind string) string {
 	}
 }
 
+// isChallengeMethod reports whether the method is proven by publishing the challenge token
+// (and can therefore be checked on demand with RunCheck).
+func isChallengeMethod(method string) bool {
+	switch method {
+	case model.VerificationMethodDNSTXT, model.VerificationMethodHTTPFile, model.VerificationMethodMetaTag:
+		return true
+	}
+	return false
+}
+
+// buildInstructions describes exactly what the per-method verifier checks
+// (verification_service.go): the host is normalizeHost(target.Value) for all three.
 func buildInstructions(method, token string, t *model.Target) string {
+	host := normalizeHost(t.Value)
 	switch method {
 	case model.VerificationMethodDNSTXT:
-		return fmt.Sprintf("Add a DNS TXT record to %s with value: scantinel-verify=%s", t.Value, token)
+		return fmt.Sprintf("Add a DNS TXT record to %s with value: scantinel-verify=%s", host, token)
 	case model.VerificationMethodHTTPFile:
-		return fmt.Sprintf("Serve the file https://%s/.well-known/scantinel-verify/%s containing the token: %s", t.Value, token, token)
+		return fmt.Sprintf("Serve https://%s/.well-known/scantinel-verify/%s with the token as its only content: %s", host, token, token)
 	case model.VerificationMethodMetaTag:
 		return fmt.Sprintf(`Add to your homepage: <meta name="scantinel-verify" content="%s">`, token)
 	case model.VerificationMethodIPRegistry:
