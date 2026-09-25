@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	AuditTopic = "audit-events"
+	// AuditTopic is the audit base topic; events go on "audit-events.<app_id>".
+	AuditTopic = goevents.AuditTopic
 
 	EventTypeTargetVerified     = "target.verified"
 	EventTypeVerificationFailed = "target.verification_failed"
@@ -43,6 +44,9 @@ type AuditProducer struct {
 
 	mu        sync.Mutex
 	producers map[string]*gonats.Producer
+
+	// publisher, when set, replaces the NATS producer for AuditTopic (tests).
+	publisher goevents.AuditPublisher
 
 	wg sync.WaitGroup
 }
@@ -101,7 +105,6 @@ func (ap *AuditProducer) EmitTargetVerified(ctx context.Context, appID string, t
 	}
 	return ap.emit(ctx, appID, EventTypeTargetVerified,
 		fmt.Sprintf("target %s verified", target.UID),
-		target.UID,
 		goevents.AuditActor{Type: goevents.ActorTypeSystem, UID: ServiceName},
 		&goevents.AuditTarget{Type: "target", UID: target.UID},
 		"INFO",
@@ -120,7 +123,6 @@ func (ap *AuditProducer) EmitVerificationFailed(ctx context.Context, appID strin
 	}
 	return ap.emit(ctx, appID, EventTypeVerificationFailed,
 		fmt.Sprintf("verification failed for target %s: %s", target.UID, reason),
-		target.UID,
 		goevents.AuditActor{Type: goevents.ActorTypeSystem, UID: ServiceName},
 		&goevents.AuditTarget{Type: "target", UID: target.UID},
 		"WARNING",
@@ -137,7 +139,6 @@ func (ap *AuditProducer) EmitScopeExpanded(ctx context.Context, appID string, ta
 	}
 	return ap.emit(ctx, appID, EventTypeScopeExpanded,
 		fmt.Sprintf("%d assets added to inventory for target %s", assetCount, target.UID),
-		target.UID,
 		goevents.AuditActor{Type: goevents.ActorTypeSystem, UID: ServiceName},
 		&goevents.AuditTarget{Type: "target", UID: target.UID},
 		"INFO",
@@ -179,7 +180,6 @@ func (ap *AuditProducer) EmitAdminTargetCreated(ctx context.Context, appID strin
 	}
 	return ap.emit(ctx, appID, EventTypeAdminTargetCreated,
 		fmt.Sprintf("admin %d created program target %s (%s)", adminUserID, target.UID, target.Value),
-		target.UID,
 		adminActor(adminUserID),
 		&goevents.AuditTarget{Type: "target", UID: target.UID},
 		"INFO",
@@ -199,7 +199,6 @@ func (ap *AuditProducer) EmitAdminTargetAuthorized(ctx context.Context, appID st
 	}
 	return ap.emit(ctx, appID, EventTypeAdminTargetAuthorized,
 		fmt.Sprintf("admin %d manually authorized target %s (%s)", adminUserID, target.UID, target.Value),
-		target.UID,
 		adminActor(adminUserID),
 		&goevents.AuditTarget{Type: "target", UID: target.UID},
 		"WARNING",
@@ -214,7 +213,6 @@ func (ap *AuditProducer) EmitAdminTargetRevoked(ctx context.Context, appID strin
 	meta["authorizations_expired"] = expired
 	return ap.emit(ctx, appID, EventTypeAdminTargetRevoked,
 		fmt.Sprintf("admin %d revoked target %s (%s): %s", adminUserID, target.UID, target.Value, reason),
-		target.UID,
 		adminActor(adminUserID),
 		&goevents.AuditTarget{Type: "target", UID: target.UID},
 		"WARNING",
@@ -226,7 +224,6 @@ func (ap *AuditProducer) EmitAdminTargetRevoked(ctx context.Context, appID strin
 func (ap *AuditProducer) EmitAdminTargetDeleted(ctx context.Context, appID string, adminUserID int64, target *model.Target) error {
 	return ap.emit(ctx, appID, EventTypeAdminTargetDeleted,
 		fmt.Sprintf("admin %d deleted target %s (%s)", adminUserID, target.UID, target.Value),
-		target.UID,
 		adminActor(adminUserID),
 		&goevents.AuditTarget{Type: "target", UID: target.UID},
 		"WARNING",
@@ -234,12 +231,13 @@ func (ap *AuditProducer) EmitAdminTargetDeleted(ctx context.Context, appID strin
 	)
 }
 
-// emit builds the canonical AuditEvent envelope and sends it to NATS JetStream.
-// partitionKey is carried in the NATS message header for routing context.
+// emit builds the canonical AuditEvent envelope and publishes it with
+// go-events PublishAudit on the app-scoped subject "audit-events.<appID>",
+// deduplicated by the event UID.
 // A nil receiver is a no-op so services can be constructed without NATS in tests.
 func (ap *AuditProducer) emit(
 	ctx context.Context,
-	appID, eventType, message, partitionKey string,
+	appID, eventType, message string,
 	actor goevents.AuditActor,
 	target *goevents.AuditTarget,
 	severity string,
@@ -280,13 +278,17 @@ func (ap *AuditProducer) emit(
 		return fmt.Errorf("auditProducer.emit %s: invalid event: %w", eventType, err)
 	}
 
-	p, err := ap.producerFor(AuditTopic)
-	if err != nil {
-		logger.Errorf("auditProducer.emit %s: get producer: %v", eventType, err)
-		return fmt.Errorf("auditProducer.emit %s: %w", eventType, err)
+	pub := ap.publisher
+	if pub == nil {
+		p, err := ap.producerFor(AuditTopic)
+		if err != nil {
+			logger.Errorf("auditProducer.emit %s: get producer: %v", eventType, err)
+			return fmt.Errorf("auditProducer.emit %s: %w", eventType, err)
+		}
+		pub = p
 	}
 
-	if err := p.SendMessageWithContext(ctx, partitionKey, event); err != nil {
+	if err := goevents.PublishAudit(ctx, pub, event); err != nil {
 		logger.Errorf("auditProducer.emit %s: %v", eventType, err)
 		return fmt.Errorf("auditProducer.emit %s: %w", eventType, err)
 	}

@@ -35,7 +35,7 @@ If scan-service is unreachable the check **fails open** (warning logged) so an o
 
 ### Admin panel (`/v1/admin`, plans/10-ADMIN-PANEL.md §3)
 
-Registered on the same Echo app behind `handler.RequireAdmin`: **403** `{status:"error", message:"admin only"}` unless the request carries `X-Is-Admin: true` **or** an `admin`/`owner` role in `X-User-Roles` (`handler.IsAdminRequest`, copied from identity-service). Both headers are trusted only because the gateway strips client-supplied copies and the in-cluster admin panel (`scantinel-website`) self-stamps them after checking the Keycloak token; admin-ness is never read from body or query. Every write emits an audit event on `audit-events` with actor `{type:"user", uid:<admin X-User-Id>}`.
+Registered on the same Echo app behind `handler.RequireAdmin`: **403** `{status:"error", message:"admin only"}` unless the request carries `X-Is-Admin: true` **or** an `admin`/`owner` role in `X-User-Roles` (`handler.IsAdminRequest`, copied from identity-service). Both headers are trusted only because the gateway strips client-supplied copies and the in-cluster admin panel (`scantinel-website`) self-stamps them after checking the Keycloak token; admin-ness is never read from body or query. Every write emits an audit event on `audit-events.<APP_ID>` (go-events `PublishAudit`) with actor `{type:"user", uid:<admin X-User-Id>}`.
 
 | Method | Path | Description | Audit type |
 |---|---|---|---|
@@ -139,7 +139,7 @@ target-service/
 | `APP_ID` | `scantinel` (default if unset) | App ID stamped on outbound NATS audit events; not threaded into own authorization logic |
 | `NATS_URL` | `nats://nats.data-dev:4222` (default if unset) | NATS JetStream connection URL |
 | `NATS_CLIENT_ID` | `target-service` (default if unset) | NATS client ID |
-| `AUDIT_TOPIC` | `audit-events` (default if unset) | NATS subject the audit producer publishes to |
+| `AUDIT_TOPIC` | `audit-events` (default if unset) | Informational only — the producer always publishes on go-events `AuditTopic` scoped per app (`audit-events.<app_id>`) |
 | `SCAN_SERVICE_URL` | `http://scan-service.scantinel-dev` (default if unset) | Source of plan entitlements (`/internal/v1/entitlements/{plan}`) for the target cap |
 | `SERVICE_SERVICE_URL` | `http://service-service.platform-dev` (default if unset) | Plan resolution when `X-User-Plan` is absent |
 
