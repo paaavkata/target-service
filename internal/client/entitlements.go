@@ -17,7 +17,7 @@ import (
 const EntitlementsTTL = 60 * time.Second
 
 // EntitlementsClient reads plan entitlements from scan-service, which owns the
-// plan_entitlements matrix (SecScanApp/plans/12-ENTITLEMENTS.md). target-service
+// plan_entitlements matrix (scantinel-ai-backend-services/plans/12-ENTITLEMENTS.md). target-service
 // never stores the matrix itself.
 type EntitlementsClient struct {
 	baseURL string

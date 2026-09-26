@@ -25,7 +25,7 @@ The ownership-verification and scope-check gate is **verified real and load-bear
 
 `POST /v1/targets` answers `409` when `(user_id, kind, value)` already exists and `422` for ip/cidr kinds while IP targets are disabled.
 
-**Plan target cap** (`internal/service/target_cap.go`, SecScanApp/plans/12-ENTITLEMENTS.md): on the customer path
+**Plan target cap** (`internal/service/target_cap.go`, scantinel-ai-backend-services/plans/12-ENTITLEMENTS.md): on the customer path
 `POST /v1/targets` answers `403 {status:"error", message, data:{code:"plan_upgrade_required", plan, max_targets}}` when the
 caller already owns `>= max_targets` targets. The plan is the trusted `X-User-Plan` header (gateway / website stamped), else
 service-service `GET /v1/apps/{app_id}/customers/{user_id}/rate-tier` (30 s cache, default `free`). `max_targets` comes from
@@ -147,7 +147,7 @@ Verified directly against `cmd/target-service/main.go` (viper-based, `AutomaticE
 
 ## Shared-libs note
 
-The `go.mod` `replace` block points to `../shared-libs/go-X` (one level up, resolved via the `services/shared-libs` symlink to the workspace-level `backend_apps/shared-libs/`), not three levels up. It now covers exactly the imported (per `require`) libs: `go-db`, `go-events`, `go-logger`, `go-nats` (v0.2.0), `go-server`. The `go-config` and `go-middleware` replace directives were removed — neither had a corresponding `require` entry and neither is imported anywhere. CI/CD uses the published versions from the module proxy, not the local replace paths.
+The `go.mod` no longer carries a `replace` block. It previously pointed `../shared-libs/go-X` (one level up, resolved via the `services/shared-libs` symlink to the workspace-level `common/shared-libs/`) at local checkouts; that has been dropped in favor of tagged module versions resolved via `go.mod`/`go.sum`: `go-db` (v0.1.1), `go-events` (v0.2.0), `go-logger` (v0.1.2), `go-nats` (v0.4.0), `go-safedial` (v0.1.0), `go-server` (v0.1.1). `go-config` and `go-middleware` are not imported and have no `require` entry. CI/CD uses the same published versions from the module proxy — there is no longer a local/CI split.
 
 ## Data
 
@@ -178,7 +178,7 @@ GitOps: push to `main` → Argo Workflows `service-ci` → Kaniko → Zot (`regi
 
 ## Related docs
 
-- `06_AUTHORIZATION_AND_SAFETY.md` (SecScanApp top level) — design rationale for this gate; historical/design record, current behavior is documented above.
+- `06_AUTHORIZATION_AND_SAFETY.md` (scantinel-ai-backend-services top level) — design rationale for this gate; historical/design record, current behavior is documented above.
 - `plans/00-PRODUCTION-READINESS-MASTER-PLAN.md` — production-readiness checklist; the SSRF-hardening and IP-pinning items referencing this service are now implemented (see status banner in that doc).
 - `scantinel-scanner-images/verify/README.md` — describes a different, unused job-dispatch verification design; this service performs all verification in-process (see banner added to that README).
 
