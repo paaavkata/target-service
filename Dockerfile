@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=registry.internal.cloudfusion.tech/gcr.io/distroless/base-debian12
+ARG BASE_IMAGE=registry.internal.stacktixs.com/gcr.io/distroless/base-debian12
 FROM ${BASE_IMAGE}
 
 ARG TARGETARCH

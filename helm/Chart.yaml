@@ -14,4 +14,4 @@ dependencies:
 - name: service-deployment-helm-chart
   alias: parent
   version: "1.3.0"
-  repository: oci://registry.internal.cloudfusion.tech/charts
+  repository: oci://registry.internal.stacktixs.com/charts

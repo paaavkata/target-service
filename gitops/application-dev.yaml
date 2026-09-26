@@ -13,7 +13,7 @@ metadata:
 spec:
   project: scantinel-dev
   source:
-    repoURL: registry.internal.cloudfusion.tech
+    repoURL: registry.internal.stacktixs.com
     chart: charts/target-service
     targetRevision: 1.0.0-c846a40
     helm:

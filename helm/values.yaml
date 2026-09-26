@@ -1,7 +1,7 @@
 parent:
   environment: dev
   image:
-    registry: registry.internal.cloudfusion.tech
+    registry: registry.internal.stacktixs.com
     app: platform
     service: target-service
     tag: latest

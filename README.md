@@ -174,7 +174,7 @@ This starts against a local NATS JetStream server (`docker run -p 4222:4222 nats
 
 ## Deployment
 
-GitOps: push to `main` → Argo Workflows `service-ci` → Kaniko → Zot (`registry.internal.cloudfusion.tech`) → bumps the `target-service` Application in `infra-gitops` (dev auto-deploys via Argo CD). Prod deployment is manual via the `promote-to-prod` workflow. See `ci/README.md` and `gitops/` for details. Helm chart parent: `service-deployment-helm-chart` (pinned 1.2.0/1.3.0-style; do not bump without coordinating).
+GitOps: push to `main` → Argo Workflows `service-ci` → Kaniko → Zot (`registry.internal.stacktixs.com`) → bumps the `target-service` Application in `infra-gitops` (dev auto-deploys via Argo CD). Prod deployment is manual via the `promote-to-prod` workflow. See `ci/README.md` and `gitops/` for details. Helm chart parent: `service-deployment-helm-chart` (pinned 1.2.0/1.3.0-style; do not bump without coordinating).
 
 ## Related docs
 
