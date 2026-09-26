@@ -7,12 +7,12 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/labstack/echo/v4 v4.12.0
-	github.com/paaavkata/go-db v0.1.0
-	github.com/paaavkata/go-events v0.1.0
-	github.com/paaavkata/go-logger v0.1.1
-	github.com/paaavkata/go-nats v0.2.0
+	github.com/paaavkata/go-db v0.1.1
+	github.com/paaavkata/go-events v0.2.0
+	github.com/paaavkata/go-logger v0.1.2
+	github.com/paaavkata/go-nats v0.4.0
 	github.com/paaavkata/go-safedial v0.1.0
-	github.com/paaavkata/go-server v0.1.0
+	github.com/paaavkata/go-server v0.1.1
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/echo-swagger v1.4.1
@@ -86,13 +86,4 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-)
-
-replace (
-	github.com/paaavkata/go-db => ../shared-libs/go-db
-	github.com/paaavkata/go-events => ../shared-libs/go-events
-	github.com/paaavkata/go-logger => ../shared-libs/go-logger
-	github.com/paaavkata/go-nats => ../shared-libs/go-nats
-	github.com/paaavkata/go-safedial => ../shared-libs/go-safedial
-	github.com/paaavkata/go-server => ../shared-libs/go-server
 )
