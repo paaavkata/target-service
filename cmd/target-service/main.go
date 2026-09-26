@@ -109,6 +109,7 @@ func main() {
 	e.Use(echoMiddleware.Logger())
 	e.Use(mgr.EchoMetricsMiddleware()) // Prometheus HTTP metrics on :9090/metrics
 	e.Use(middleware.CorsMiddleware())
+	e.Use(middleware.UserUIDMiddleware())
 
 	// ── 4. Swagger (non-prod only) ────────────────────────────────────────────
 	if env != "prod" {

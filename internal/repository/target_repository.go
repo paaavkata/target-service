@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"target-service/internal/middleware"
+
 	"context"
 	"errors"
 	"fmt"
@@ -64,12 +66,13 @@ func (r *targetRepository) insert(ctx context.Context, userID int64, kind, rawVa
 	value, registrableDomain := NormalizeTargetValue(kind, rawValue)
 
 	query := `
-		INSERT INTO target.targets (user_id, kind, value, registrable_domain, status, source, label, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
+		INSERT INTO target.targets (user_id, kind, value, registrable_domain, status, source, label, keycloak_uid, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
 		ON CONFLICT (user_id, kind, value) DO NOTHING
 		RETURNING ` + targetColumns
 
-	row := r.db.QueryRow(ctx, query, userID, kind, value, registrableDomain, status, source, label)
+	row := r.db.QueryRow(ctx, query, userID, kind, value, registrableDomain, status, source, label,
+		middleware.KeycloakUID(ctx, userID))
 	t := &model.Target{}
 	if err := scanTarget(row, t); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
