@@ -204,6 +204,16 @@ type ScopeCheckRequest struct {
 	// CDN-fronted host. Reserved/private/metadata IPs are refused either way.
 	// Absent means intrusive: an old caller never gains CDN access by omission.
 	Intrusive *bool `json:"intrusive,omitempty"`
+	// AuthScanAuthorized is the per-scan authenticated-scanning attestation
+	// (15 §6): the customer attests that automated account creation and
+	// account-management testing against their app is authorized. It is
+	// consulted ONLY for the state-changing auth-scan phases (auth_register,
+	// auth_crawl, auth_account_mgmt); absent/false there → the phase is skipped
+	// ("attestation missing"). Non-auth phases ignore it. Fail-closed: absent
+	// means not attested. scan-service is responsible for recording the
+	// per-scan attestation and passing it here for auth phases (see
+	// scope_service.go authScanVerdict and the §6 follow-up note).
+	AuthScanAuthorized *bool `json:"auth_scan_authorized,omitempty"`
 }
 
 // IsIntrusive reports whether the request is for intrusive testing. A request

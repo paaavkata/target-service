@@ -710,3 +710,101 @@ func TestScopeCheck_SharedInfraIP_NonIntrusive(t *testing.T) {
 	assert.False(t, res.Authorized)
 	assert.Contains(t, res.Reason, "shared-infrastructure")
 }
+
+// ---------------------------------------------------------------------------
+// T4: authenticated-scanning phase gate (16 T4, 15 §5/§6)
+// ---------------------------------------------------------------------------
+
+// Verified, ownership-active, attested + in-scope host → each of the three
+// recognized auth-scan phases is authorized (falls through to the normal gate).
+func TestScopeCheck_AuthPhases_Attested_Authorized(t *testing.T) {
+	target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")})
+
+	for _, phase := range []string{
+		service.PhaseAuthRegister, service.PhaseAuthCrawl, service.PhaseAuthAccountMgmt,
+	} {
+		res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+			TargetUID:          "uid-1",
+			Host:               "myapp.test",
+			Phase:              phase,
+			AuthScanAuthorized: boolPtr(true),
+		})
+		require.NoError(t, err)
+		assert.True(t, res.Authorized, "auth phase %s with attestation + in-scope host should be authorized", phase)
+	}
+}
+
+// Unverified target → skip with the auth-specific "unverified target" reason,
+// for every auth-scan phase (precedence over the generic status deny).
+func TestScopeCheck_AuthPhase_UnverifiedTarget_Skip(t *testing.T) {
+	tr := &fakeTargetRepo{byUID: map[string]*model.Target{
+		"uid-1": {ID: 1, UID: "uid-1", Kind: model.TargetKindDomain, Status: model.TargetStatusUnverified},
+	}}
+	ar := &fakeAuthRepo{auths: map[int64][]model.Authorization{}}
+	svc := service.NewScopeService(tr, ar)
+
+	for _, phase := range []string{
+		service.PhaseAuthRegister, service.PhaseAuthCrawl, service.PhaseAuthAccountMgmt,
+	} {
+		res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+			TargetUID:          "uid-1",
+			Host:               "myapp.test",
+			Phase:              phase,
+			AuthScanAuthorized: boolPtr(true),
+		})
+		require.NoError(t, err)
+		assert.False(t, res.Authorized, "auth phase %s on unverified target must be skipped", phase)
+		assert.Contains(t, res.Reason, "unverified target")
+	}
+}
+
+// Attestation absent/false → skip with "attestation missing", even on a
+// verified, in-scope target.
+func TestScopeCheck_AuthPhase_AttestationMissing_Skip(t *testing.T) {
+	target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")})
+
+	for _, attestation := range []*bool{nil, boolPtr(false)} {
+		res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+			TargetUID:          "uid-1",
+			Host:               "myapp.test",
+			Phase:              service.PhaseAuthRegister,
+			AuthScanAuthorized: attestation,
+		})
+		require.NoError(t, err)
+		assert.False(t, res.Authorized, "missing/false attestation must be skipped")
+		assert.Contains(t, res.Reason, "attestation missing")
+	}
+}
+
+// An unrecognized auth_* phase is denied by default (an unknown state-changing
+// phase — including a destructive one — never slips through).
+func TestScopeCheck_UnknownAuthPhase_Denied(t *testing.T) {
+	target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")})
+
+	for _, phase := range []string{"auth_delete_account", "auth_admin", "auth_"} {
+		res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+			TargetUID:          "uid-1",
+			Host:               "myapp.test",
+			Phase:              phase,
+			AuthScanAuthorized: boolPtr(true),
+		})
+		require.NoError(t, err)
+		assert.False(t, res.Authorized, "unknown auth phase %s must be denied", phase)
+		assert.Contains(t, res.Reason, "default-deny")
+	}
+}
+
+// Non-auth phases are unaffected by the auth gate: no attestation needed.
+func TestScopeCheck_NonAuthPhase_Unaffected(t *testing.T) {
+	target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")})
+
+	res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+		TargetUID: "uid-1", Host: "myapp.test", Phase: "web", // no attestation
+	})
+	require.NoError(t, err)
+	assert.True(t, res.Authorized, "non-auth phase must not require the auth attestation")
+}
