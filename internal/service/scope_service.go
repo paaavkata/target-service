@@ -177,6 +177,62 @@ func isLookupMiss(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
+// Auth-scan phase keys (16 T4, 15 §5/§6). These are the state-changing
+// authenticated-scanning phases. They share the whole host/IP scope gate below
+// but carry two EXTRA, default-deny preconditions enforced by authScanVerdict:
+// a current ownership verification AND the per-scan auth_scan_authorized
+// attestation. Any phase in the auth_* namespace that is not one of these keys
+// is denied by default (an unrecognized state-changing phase must never slip
+// through). Values are the exact strings scan-service sends as ScanTask.Phase.
+const (
+	PhaseAuthRegister    = "auth_register"
+	PhaseAuthCrawl       = "auth_crawl"
+	PhaseAuthAccountMgmt = "auth_account_mgmt"
+)
+
+// authScanPhases is the allowlist of recognized auth-scan phase keys.
+var authScanPhases = map[string]bool{
+	PhaseAuthRegister:    true,
+	PhaseAuthCrawl:       true,
+	PhaseAuthAccountMgmt: true,
+}
+
+// isAuthScanNamespace reports whether phase is in the state-changing auth-scan
+// namespace. Everything here is gated by authScanVerdict; everything outside it
+// keeps the service's existing (non-auth) behaviour unchanged.
+func isAuthScanNamespace(phase string) bool {
+	return strings.HasPrefix(phase, "auth_")
+}
+
+// authScanVerdict applies the extra default-deny gate the state-changing
+// auth-scan phases must pass BEFORE the normal host/IP scope evaluation
+// (15 §5 destructive-op handling, §6 per-scan attestation). It returns:
+//   - a deny for an unrecognized auth_* phase ("default-deny" — an unknown
+//     state-changing phase, including any destructive one, is refused here);
+//   - a skip "unverified target" when the target has no current ownership
+//     verification (06 §2);
+//   - a skip "attestation missing" when auth_scan_authorized is absent/false;
+//   - nil once those preconditions hold (or the phase is not an auth-scan
+//     phase at all), meaning CheckScope proceeds with the normal scope gate.
+//
+// It is a pure function (no DB/DNS) so the auth-gate verdicts are table-tested
+// in isolation as well as end-to-end through CheckScope.
+func authScanVerdict(phase string, verified bool, authScanAuthorized *bool) *model.ScopeCheckResponse {
+	if !isAuthScanNamespace(phase) {
+		return nil
+	}
+	if !authScanPhases[phase] {
+		return denyResult(fmt.Sprintf("auth-scan phase %q is not a recognized state-changing phase — refused (default-deny, 15 §5)", phase))
+	}
+	if !verified {
+		return denyResult("skip: unverified target — authenticated scanning requires a current ownership verification (06 §2, 15 §6)")
+	}
+	if authScanAuthorized == nil || !*authScanAuthorized {
+		return denyResult("skip: attestation missing — authenticated scanning requires the per-scan auth_scan_authorized attestation (15 §6)")
+	}
+	return nil
+}
+
 func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequest) (*model.ScopeCheckResponse, error) {
 	if req.Host == "" && req.IP == "" {
 		return denyResult("host or ip is required"), nil
@@ -189,6 +245,15 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 	target, err := s.targetRepo.GetByUIDInternal(ctx, req.TargetUID)
 	if err != nil {
 		return denyResult(fmt.Sprintf("target not found: %v", err)), nil
+	}
+
+	// Auth-scan phases carry an extra default-deny gate (recognized phase +
+	// ownership-verified + per-scan attestation) evaluated before the generic
+	// status/scope checks so the auth-specific skip reasons are returned. A nil
+	// verdict means either a non-auth phase or a passing attestation layer; in
+	// both cases we fall through to the normal gate below.
+	if v := authScanVerdict(req.Phase, target.Status == model.TargetStatusVerified, req.AuthScanAuthorized); v != nil {
+		return v, nil
 	}
 
 	if target.Status != model.TargetStatusVerified {
