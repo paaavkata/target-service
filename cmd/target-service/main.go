@@ -206,9 +206,6 @@ func main() {
 
 	serverAddr := fmt.Sprintf(":%s", appPort)
 	logger.Infof("target-service listening on %s", serverAddr)
-	mgr.Run(
-		func() error { return e.Start(serverAddr) },
-		func(shutdownCtx context.Context) error { return e.Shutdown(shutdownCtx) },
-	)
+	mgr.Run(mgr.ServeEcho(e, serverAddr))
 	logger.Info("target-service: stopped")
 }
