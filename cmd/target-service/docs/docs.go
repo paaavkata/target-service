@@ -79,7 +79,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "internal.call"
             }
         },
         "/internal/v1/targets/{target_uid}/assets": {
@@ -147,7 +148,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "internal.call"
             }
         },
         "/internal/v1/targets/{target_uid}/verified": {
@@ -206,7 +208,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "internal.call"
             }
         },
         "/v1/admin/stats": {
@@ -259,7 +262,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "targets.manage"
             }
         },
         "/v1/admin/targets": {
@@ -354,7 +358,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "targets.manage"
             },
             "post": {
                 "description": "Registers a target as verified with a method=program authorization whose evidence is the public program. user_id defaults to the admin's X-User-Id; authorized_days 1..365 (default 90). Value rules match POST /v1/targets (ip/cidr still refused while IP targets are disabled).",
@@ -442,7 +447,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "targets.manage"
             }
         },
         "/v1/admin/targets/{target_uid}": {
@@ -514,7 +520,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "targets.manage"
             },
             "delete": {
                 "description": "Removes the target with its authorizations and asset inventory regardless of owner.",
@@ -579,7 +586,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "targets.manage"
             }
         },
         "/v1/admin/targets/{target_uid}/authorize": {
@@ -676,7 +684,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "targets.manage"
             }
         },
         "/v1/admin/targets/{target_uid}/revoke": {
@@ -767,7 +776,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "targets.manage"
             }
         },
         "/v1/targets": {
@@ -841,7 +851,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "authenticated"
             },
             "post": {
                 "description": "Register a domain/URL/IP/CIDR target and receive a verification challenge token.",
@@ -940,7 +951,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "authenticated"
             }
         },
         "/v1/targets/{target_uid}": {
@@ -1006,7 +1018,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "authenticated"
             },
             "delete": {
                 "description": "Remove a target and all its authorization scope and asset inventory.",
@@ -1052,7 +1065,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "authenticated"
             }
         },
         "/v1/targets/{target_uid}/assets": {
@@ -1115,7 +1129,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "authenticated"
             }
         },
         "/v1/targets/{target_uid}/verify": {
@@ -1187,7 +1202,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "authenticated"
             }
         },
         "/v1/tools/email-auth": {
@@ -1251,7 +1267,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "public"
             }
         },
         "/v1/tools/security-headers": {
@@ -1321,7 +1338,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "public"
             }
         },
         "/v1/tools/tls": {
@@ -1391,7 +1409,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "public"
             }
         },
         "/v1/tools/website-check": {
@@ -1461,7 +1480,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.Response"
                         }
                     }
-                }
+                },
+                "x-required-permission": "public"
             }
         }
     },
@@ -1548,13 +1568,15 @@ const docTemplate = `{
                 "by_source": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer"
+                        "type": "integer",
+                        "format": "int64"
                     }
                 },
                 "by_status": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer"
+                        "type": "integer",
+                        "format": "int64"
                     }
                 },
                 "total": {
@@ -1868,9 +1890,17 @@ const docTemplate = `{
                 "target_uid"
             ],
             "properties": {
+                "auth_scan_authorized": {
+                    "description": "AuthScanAuthorized is the per-scan authenticated-scanning attestation\n(15 §6): the customer attests that automated account creation and\naccount-management testing against their app is authorized. It is\nconsulted ONLY for the state-changing auth-scan phases (auth_register,\nauth_crawl, auth_account_mgmt); absent/false there → the phase is skipped\n(\"attestation missing\"). Non-auth phases ignore it. Fail-closed: absent\nmeans not attested. scan-service is responsible for recording the\nper-scan attestation and passing it here for auth phases (see\nscope_service.go authScanVerdict and the §6 follow-up note).",
+                    "type": "boolean"
+                },
                 "host": {
                     "description": "Host or IP being queried — exactly one must be provided.",
                     "type": "string"
+                },
+                "intrusive": {
+                    "description": "Intrusive is the dispatching tool's intrusive flag from the scan check\nplan. Shared infrastructure (CDN ranges) is refused only for intrusive\ntesting (06 §3), so a non-intrusive tool may be authorized against a\nCDN-fronted host. Reserved/private/metadata IPs are refused either way.\nAbsent means intrusive: an old caller never gains CDN access by omission.",
+                    "type": "boolean"
                 },
                 "ip": {
                     "type": "string"

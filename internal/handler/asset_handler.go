@@ -33,6 +33,7 @@ func (h *AssetHandler) RegisterRoutes(g *echo.Group) {
 // @Success      200         {object}  model.Response{data=[]model.AssetDTO}
 // @Failure      400         {object}  model.Response
 // @Failure      500         {object}  model.Response
+// @x-required-permission "authenticated"
 // @Router       /v1/targets/{target_uid}/assets [get]
 func (h *AssetHandler) List(c echo.Context) error {
 	userID, err := h.helper.UserIDFromHeader(c)

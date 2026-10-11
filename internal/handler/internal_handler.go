@@ -53,6 +53,7 @@ func (h *InternalHandler) RegisterRoutes(g *echo.Group) {
 // @Success      200         {object}  model.Response{data=model.VerifiedCheckResponse}
 // @Failure      400         {object}  model.Response
 // @Failure      500         {object}  model.Response
+// @x-required-permission "internal.call"
 // @Router       /internal/v1/targets/{target_uid}/verified [get]
 func (h *InternalHandler) IsVerified(c echo.Context) error {
 	uid := c.Param("target_uid")
@@ -96,6 +97,7 @@ func (h *InternalHandler) IsVerified(c echo.Context) error {
 // @Success      200      {object}  model.Response{data=model.ScopeCheckResponse}
 // @Failure      400      {object}  model.Response
 // @Failure      500      {object}  model.Response
+// @x-required-permission "internal.call"
 // @Router       /internal/v1/scope/check [post]
 func (h *InternalHandler) ScopeCheck(c echo.Context) error {
 	req := &model.ScopeCheckRequest{}
@@ -128,6 +130,7 @@ func (h *InternalHandler) ScopeCheck(c echo.Context) error {
 // @Success      200         {object}  model.Response{data=[]model.AssetDTO}
 // @Failure      400         {object}  model.Response
 // @Failure      500         {object}  model.Response
+// @x-required-permission "internal.call"
 // @Router       /internal/v1/targets/{target_uid}/assets [post]
 func (h *InternalHandler) UpsertAssets(c echo.Context) error {
 	uid := c.Param("target_uid")

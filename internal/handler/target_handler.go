@@ -60,6 +60,7 @@ func (h *TargetHandler) RegisterRoutes(g *echo.Group) {
 // @Failure      409        {object}  model.Response  "duplicate (kind, value) for this user"
 // @Failure      422        {object}  model.Response  "IP/CIDR targets are not yet supported"
 // @Failure      500        {object}  model.Response
+// @x-required-permission "authenticated"
 // @Router       /v1/targets [post]
 func (h *TargetHandler) Create(c echo.Context) error {
 	userID, err := h.helper.UserIDFromHeader(c)
@@ -112,6 +113,7 @@ func (h *TargetHandler) Create(c echo.Context) error {
 // @Success      200          {object}  model.Response{data=[]model.TargetDTO}
 // @Failure      400          {object}  model.Response
 // @Failure      500          {object}  model.Response
+// @x-required-permission "authenticated"
 // @Router       /v1/targets [get]
 func (h *TargetHandler) List(c echo.Context) error {
 	userID, err := h.helper.UserIDFromHeader(c)
@@ -155,6 +157,7 @@ func (h *TargetHandler) List(c echo.Context) error {
 // @Failure      400         {object}  model.Response
 // @Failure      404         {object}  model.Response
 // @Failure      500         {object}  model.Response
+// @x-required-permission "authenticated"
 // @Router       /v1/targets/{target_uid} [get]
 func (h *TargetHandler) GetByUID(c echo.Context) error {
 	userID, err := h.helper.UserIDFromHeader(c)
@@ -186,6 +189,7 @@ func (h *TargetHandler) GetByUID(c echo.Context) error {
 // @Success      200         {object}  model.Response{data=model.TargetDetailDTO}
 // @Failure      400         {object}  model.Response
 // @Failure      500         {object}  model.Response
+// @x-required-permission "authenticated"
 // @Router       /v1/targets/{target_uid}/verify [post]
 func (h *TargetHandler) Verify(c echo.Context) error {
 	userID, err := h.helper.UserIDFromHeader(c)
@@ -223,6 +227,7 @@ func (h *TargetHandler) Verify(c echo.Context) error {
 // @Success      200         {object}  model.Response
 // @Failure      400         {object}  model.Response
 // @Failure      500         {object}  model.Response
+// @x-required-permission "authenticated"
 // @Router       /v1/targets/{target_uid} [delete]
 func (h *TargetHandler) Delete(c echo.Context) error {
 	userID, err := h.helper.UserIDFromHeader(c)

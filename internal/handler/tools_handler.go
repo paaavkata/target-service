@@ -174,6 +174,7 @@ func (h *ToolsHandler) bindDomain(c echo.Context) (string, bool) {
 // @Failure      429      {object}  model.Response
 // @Failure      502      {object}  model.Response
 // @Failure      503      {object}  model.Response
+// @x-required-permission "public"
 // @Router       /v1/tools/security-headers [post]
 func (h *ToolsHandler) SecurityHeaders(c echo.Context) error {
 	release := h.guard(c)
@@ -208,6 +209,7 @@ func (h *ToolsHandler) SecurityHeaders(c echo.Context) error {
 // @Failure      429      {object}  model.Response
 // @Failure      502      {object}  model.Response
 // @Failure      503      {object}  model.Response
+// @x-required-permission "public"
 // @Router       /v1/tools/tls [post]
 func (h *ToolsHandler) TLS(c echo.Context) error {
 	release := h.guard(c)
@@ -241,6 +243,7 @@ func (h *ToolsHandler) TLS(c echo.Context) error {
 // @Failure      400      {object}  model.Response
 // @Failure      429      {object}  model.Response
 // @Failure      503      {object}  model.Response
+// @x-required-permission "public"
 // @Router       /v1/tools/email-auth [post]
 func (h *ToolsHandler) EmailAuth(c echo.Context) error {
 	release := h.guard(c)
@@ -275,6 +278,7 @@ func (h *ToolsHandler) EmailAuth(c echo.Context) error {
 // @Failure      429      {object}  model.Response
 // @Failure      502      {object}  model.Response
 // @Failure      503      {object}  model.Response
+// @x-required-permission "public"
 // @Router       /v1/tools/website-check [post]
 func (h *ToolsHandler) WebsiteCheck(c echo.Context) error {
 	release := h.guard(c)

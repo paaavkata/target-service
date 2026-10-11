@@ -58,10 +58,12 @@ definitions:
     properties:
       by_source:
         additionalProperties:
+          format: int64
           type: integer
         type: object
       by_status:
         additionalProperties:
+          format: int64
           type: integer
         type: object
       total:
@@ -276,9 +278,29 @@ definitions:
     type: object
   model.ScopeCheckRequest:
     properties:
+      auth_scan_authorized:
+        description: |-
+          AuthScanAuthorized is the per-scan authenticated-scanning attestation
+          (15 §6): the customer attests that automated account creation and
+          account-management testing against their app is authorized. It is
+          consulted ONLY for the state-changing auth-scan phases (auth_register,
+          auth_crawl, auth_account_mgmt); absent/false there → the phase is skipped
+          ("attestation missing"). Non-auth phases ignore it. Fail-closed: absent
+          means not attested. scan-service is responsible for recording the
+          per-scan attestation and passing it here for auth phases (see
+          scope_service.go authScanVerdict and the §6 follow-up note).
+        type: boolean
       host:
         description: Host or IP being queried — exactly one must be provided.
         type: string
+      intrusive:
+        description: |-
+          Intrusive is the dispatching tool's intrusive flag from the scan check
+          plan. Shared infrastructure (CDN ranges) is refused only for intrusive
+          testing (06 §3), so a non-intrusive tool may be authorized against a
+          CDN-fronted host. Reserved/private/metadata IPs are refused either way.
+          Absent means intrusive: an old caller never gains CDN access by omission.
+        type: boolean
       ip:
         type: string
       phase:
@@ -586,6 +608,7 @@ paths:
       summary: Authorization scope gate (INTERNAL)
       tags:
       - internal
+      x-required-permission: internal.call
   /internal/v1/targets/{target_uid}/assets:
     post:
       consumes:
@@ -629,6 +652,7 @@ paths:
       summary: Upsert discovered assets (INTERNAL)
       tags:
       - internal
+      x-required-permission: internal.call
   /internal/v1/targets/{target_uid}/verified:
     get:
       description: 'Cluster-only. verified ⇔ target status is "verified" AND an active
@@ -668,6 +692,7 @@ paths:
       summary: Target verification + ownership check (INTERNAL)
       tags:
       - internal
+      x-required-permission: internal.call
   /v1/admin/stats:
     get:
       description: '`{total, by_status: {…}, by_source: {…}}` across all users.'
@@ -700,6 +725,7 @@ paths:
       summary: Target counts (ADMIN)
       tags:
       - admin
+      x-required-permission: targets.manage
   /v1/admin/targets:
     get:
       description: Cross-user paged list. Unknown filter values return 400. `q` is
@@ -761,6 +787,7 @@ paths:
       summary: List targets across all users (ADMIN)
       tags:
       - admin
+      x-required-permission: targets.manage
     post:
       consumes:
       - application/json
@@ -820,6 +847,7 @@ paths:
       summary: Create a bug-bounty program target (ADMIN)
       tags:
       - admin
+      x-required-permission: targets.manage
   /v1/admin/targets/{target_uid}:
     delete:
       description: Removes the target with its authorizations and asset inventory
@@ -866,6 +894,7 @@ paths:
       summary: Delete any user's target (ADMIN)
       tags:
       - admin
+      x-required-permission: targets.manage
     get:
       description: Target detail with its current authorization (incl. evidence) and
         asset inventory, regardless of owner.
@@ -911,6 +940,7 @@ paths:
       summary: Get any user's target (ADMIN)
       tags:
       - admin
+      x-required-permission: targets.manage
   /v1/admin/targets/{target_uid}/authorize:
     post:
       consumes:
@@ -975,6 +1005,7 @@ paths:
       summary: Manually mark a target verified (ADMIN)
       tags:
       - admin
+      x-required-permission: targets.manage
   /v1/admin/targets/{target_uid}/revoke:
     post:
       consumes:
@@ -1034,6 +1065,7 @@ paths:
       summary: Revoke a target (ADMIN kill switch)
       tags:
       - admin
+      x-required-permission: targets.manage
   /v1/targets:
     get:
       description: Return a paged list of targets owned by the authenticated user.
@@ -1080,6 +1112,7 @@ paths:
       summary: List targets
       tags:
       - targets
+      x-required-permission: authenticated
     post:
       consumes:
       - application/json
@@ -1142,6 +1175,7 @@ paths:
       summary: Register a new target
       tags:
       - targets
+      x-required-permission: authenticated
   /v1/targets/{target_uid}:
     delete:
       description: Remove a target and all its authorization scope and asset inventory.
@@ -1174,6 +1208,7 @@ paths:
       summary: Delete a target
       tags:
       - targets
+      x-required-permission: authenticated
     get:
       description: Return a target with its current authorization scope and asset
         inventory.
@@ -1215,6 +1250,7 @@ paths:
       summary: Get target detail
       tags:
       - targets
+      x-required-permission: authenticated
   /v1/targets/{target_uid}/assets:
     get:
       description: Return the discovered asset inventory (subdomains/IPs/ports/services)
@@ -1255,6 +1291,7 @@ paths:
       summary: List assets for a target
       tags:
       - assets
+      x-required-permission: authenticated
   /v1/targets/{target_uid}/verify:
     post:
       consumes:
@@ -1301,6 +1338,7 @@ paths:
       summary: Trigger ownership verification
       tags:
       - targets
+      x-required-permission: authenticated
   /v1/tools/email-auth:
     post:
       consumes:
@@ -1342,6 +1380,7 @@ paths:
       summary: Free SPF/DMARC/DKIM check
       tags:
       - tools
+      x-required-permission: public
   /v1/tools/security-headers:
     post:
       consumes:
@@ -1386,6 +1425,7 @@ paths:
       summary: Free security headers check
       tags:
       - tools
+      x-required-permission: public
   /v1/tools/tls:
     post:
       consumes:
@@ -1431,6 +1471,7 @@ paths:
       summary: Free TLS/SSL check
       tags:
       - tools
+      x-required-permission: public
   /v1/tools/website-check:
     post:
       consumes:
@@ -1476,4 +1517,5 @@ paths:
       summary: Free combined website security check
       tags:
       - tools
+      x-required-permission: public
 swagger: "2.0"

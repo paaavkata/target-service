@@ -65,6 +65,7 @@ var (
 // @Failure      400          {object}  model.Response
 // @Failure      403          {object}  model.Response  "admin only"
 // @Failure      500          {object}  model.Response
+// @x-required-permission "targets.manage"
 // @Router       /v1/admin/targets [get]
 func (h *AdminHandler) ListTargets(c echo.Context) error {
 	page, pageSize := h.helper.AdminPagingParams(c.QueryParam("page"), c.QueryParam("page_size"))
@@ -122,6 +123,7 @@ func (h *AdminHandler) ListTargets(c echo.Context) error {
 // @Failure      403         {object}  model.Response  "admin only"
 // @Failure      404         {object}  model.Response
 // @Failure      500         {object}  model.Response
+// @x-required-permission "targets.manage"
 // @Router       /v1/admin/targets/{target_uid} [get]
 func (h *AdminHandler) GetTarget(c echo.Context) error {
 	uid := c.Param("target_uid")
@@ -150,6 +152,7 @@ func (h *AdminHandler) GetTarget(c echo.Context) error {
 // @Failure      409         {object}  model.Response  "duplicate (user_id, kind, value)"
 // @Failure      422         {object}  model.Response  "IP/CIDR targets are not yet supported"
 // @Failure      500         {object}  model.Response
+// @x-required-permission "targets.manage"
 // @Router       /v1/admin/targets [post]
 func (h *AdminHandler) CreateProgramTarget(c echo.Context) error {
 	adminID, err := h.helper.UserIDFromHeader(c)
@@ -184,6 +187,7 @@ func (h *AdminHandler) CreateProgramTarget(c echo.Context) error {
 // @Failure      404         {object}  model.Response
 // @Failure      422         {object}  model.Response  "IP/CIDR targets are not yet supported"
 // @Failure      500         {object}  model.Response
+// @x-required-permission "targets.manage"
 // @Router       /v1/admin/targets/{target_uid}/authorize [post]
 func (h *AdminHandler) AuthorizeTarget(c echo.Context) error {
 	adminID, err := h.helper.UserIDFromHeader(c)
@@ -221,6 +225,7 @@ func (h *AdminHandler) AuthorizeTarget(c echo.Context) error {
 // @Failure      403         {object}  model.Response  "admin only"
 // @Failure      404         {object}  model.Response
 // @Failure      500         {object}  model.Response
+// @x-required-permission "targets.manage"
 // @Router       /v1/admin/targets/{target_uid}/revoke [post]
 func (h *AdminHandler) RevokeTarget(c echo.Context) error {
 	adminID, err := h.helper.UserIDFromHeader(c)
@@ -256,6 +261,7 @@ func (h *AdminHandler) RevokeTarget(c echo.Context) error {
 // @Failure      403         {object}  model.Response  "admin only"
 // @Failure      404         {object}  model.Response
 // @Failure      500         {object}  model.Response
+// @x-required-permission "targets.manage"
 // @Router       /v1/admin/targets/{target_uid} [delete]
 func (h *AdminHandler) DeleteTarget(c echo.Context) error {
 	adminID, err := h.helper.UserIDFromHeader(c)
@@ -281,6 +287,7 @@ func (h *AdminHandler) DeleteTarget(c echo.Context) error {
 // @Success      200         {object}  model.Response{data=model.AdminStatsResponse}
 // @Failure      403         {object}  model.Response  "admin only"
 // @Failure      500         {object}  model.Response
+// @x-required-permission "targets.manage"
 // @Router       /v1/admin/stats [get]
 func (h *AdminHandler) Stats(c echo.Context) error {
 	stats, err := h.svc.Stats(c.Request().Context())
