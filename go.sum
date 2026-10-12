@@ -108,8 +108,8 @@ github.com/paaavkata/go-nats v0.5.0 h1:OmPebE6eHrzFeploRSk2XR+aK+W4YkjFdOdeg1ZYf
 github.com/paaavkata/go-nats v0.5.0/go.mod h1:u0ryl1jnFUMi7O3KOQFn8ztze6s4JQzUlpM1vIerIQI=
 github.com/paaavkata/go-safedial v0.1.0 h1:/fnOoMrqZAOGAmT9mFSMROWa5XOOA1q7TukGJ2GJzcg=
 github.com/paaavkata/go-safedial v0.1.0/go.mod h1:+qek10ujpRuTohwUnMh4Am9N4kIRpfSWUJynbQpgl54=
-github.com/paaavkata/go-server v0.3.0 h1:vYXagvP4DCfuoFTHUQgr4E2pdA0IfVEULxoKKb4A7AY=
-github.com/paaavkata/go-server v0.3.0/go.mod h1:BarNnIhsd8cM0gln553p5DQiqcSqQN2nVZ40DGcXpYo=
+github.com/paaavkata/go-server v0.3.1 h1:hiwFU/z9ONlFsmQtS+r0jW9tgGXi51VBP9JfxIitUKM=
+github.com/paaavkata/go-server v0.3.1/go.mod h1:BarNnIhsd8cM0gln553p5DQiqcSqQN2nVZ40DGcXpYo=
 github.com/pelletier/go-toml/v2 v2.2.2 h1:aYUidT7k73Pcl9nb2gScu7NSrKCSHIDE89b3+6Wq+LM=
 github.com/pelletier/go-toml/v2 v2.2.2/go.mod h1:1t835xjRzz80PqgE6HHgN2JOsmgYu/h4qDAS4n929Rs=
 github.com/pierrec/lz4/v4 v4.1.15 h1:MO0/ucJhngq7299dKLwIMtgTfbkoSPF6AoMYDd8Q4q0=
