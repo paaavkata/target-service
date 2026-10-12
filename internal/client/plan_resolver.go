@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	goserver "github.com/paaavkata/go-server"
 )
 
 // DefaultPlan is the plan assumed when nothing better is known — the same
@@ -45,7 +47,7 @@ func NewPlanResolver(baseURL, appID string) *PlanResolver {
 	return &PlanResolver{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		appID:   appID,
-		http:    &http.Client{Timeout: 3 * time.Second},
+		http:    &http.Client{Transport: &goserver.RequestIDTransport{}, Timeout: 3 * time.Second},
 		ttl:     PlanTTL,
 		now:     time.Now,
 		cache:   map[string]planEntry{},

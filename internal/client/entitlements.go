@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	goserver "github.com/paaavkata/go-server"
 )
 
 // EntitlementsTTL is how long a plan's entitlement row is cached. Plan edits
@@ -41,7 +43,7 @@ func NewEntitlementsClient(baseURL, appID string) *EntitlementsClient {
 	return &EntitlementsClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		appID:   appID,
-		http:    &http.Client{Timeout: 3 * time.Second},
+		http:    &http.Client{Transport: &goserver.RequestIDTransport{}, Timeout: 3 * time.Second},
 		ttl:     EntitlementsTTL,
 		now:     time.Now,
 		cache:   map[string]entitlementEntry{},
