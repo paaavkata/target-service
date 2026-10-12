@@ -107,6 +107,20 @@ func main() {
 	e.GET("/healthz", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
 
 	e.Use(echoMiddleware.Logger())
+	// One go-logger line per request so trace_id (X-Request-ID) reaches Loki.
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			err := next(c)
+			if err != nil {
+				c.Error(err)
+			}
+			logger.InfofMap(c.Request().Context(), map[string]interface{}{
+				"message": "request", "method": c.Request().Method,
+				"path": c.Request().URL.Path, "status": c.Response().Status,
+			})
+			return err
+		}
+	})
 	e.Use(mgr.EchoMetricsMiddleware()) // Prometheus HTTP metrics on :9090/metrics
 	e.Use(middleware.CorsMiddleware())
 	e.Use(middleware.UserUIDMiddleware())
