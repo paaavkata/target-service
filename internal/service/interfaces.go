@@ -54,6 +54,13 @@ type ScopeServiceInterface interface {
 	CheckVerified(ctx context.Context, targetUID string, userID *int64) (*model.VerifiedCheckResponse, error)
 }
 
+// ProgramServiceInterface owns bug-bounty program-policy sync (17 §10).
+type ProgramServiceInterface interface {
+	// SyncProgram pulls a program's scope from its platform and upserts it (and
+	// its assets) into the program store, returning the stored program.
+	SyncProgram(ctx context.Context, req *model.SyncProgramRequest) (*model.ProgramDTO, error)
+}
+
 // VerifierInterface abstracts the per-method verification implementations.
 type VerifierInterface interface {
 	// Verify attempts to confirm the token for the given authorization record.

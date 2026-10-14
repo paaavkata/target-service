@@ -24,6 +24,7 @@ import (
 	_ "target-service/cmd/target-service/docs"
 	"target-service/internal/client"
 	"target-service/internal/handler"
+	"target-service/internal/ingest"
 	"target-service/internal/middleware"
 	"target-service/internal/producer"
 	"target-service/internal/repository"
@@ -158,12 +159,26 @@ func main() {
 	targetRepo := repository.NewTargetRepository(db)
 	authRepo := repository.NewAuthorizationRepository(db)
 	assetRepo := repository.NewAssetRepository(db)
+	programRepo := repository.NewProgramRepository(db)
 
 	// ── 8. Services ───────────────────────────────────────────────────────────
 	verifier := service.NewVerificationService(authRepo)
 	targetSvc := service.NewTargetService(targetRepo, authRepo, assetRepo, verifier, auditProducer, appID)
 	assetSvc := service.NewAssetService(targetRepo, assetRepo, auditProducer, appID)
-	scopeSvc := service.NewScopeService(targetRepo, authRepo)
+	// Program mode (17 §10): the scope gate enforces structured bug-bounty
+	// program policy for program-linked authorizations, alongside client mode.
+	scopeSvc := service.NewScopeServiceWithProgram(targetRepo, authRepo, programRepo)
+	// HackerOne program-policy connector. Credentials are optional at boot: when
+	// absent, SyncProgram returns "policy source unavailable" rather than
+	// fabricating scope (no scraping fallback). HACKERONE_API_URL overrides the
+	// default API base (tests / sandbox).
+	h1Conn := ingest.NewHackerOneProgramConnector(
+		viper.GetString("HACKERONE_API_URL"),
+		viper.GetString("HACKERONE_API_USERNAME"),
+		viper.GetString("HACKERONE_API_TOKEN"),
+		nil,
+	)
+	programSvc := service.NewProgramService(programRepo, h1Conn)
 	toolsSvc := service.NewToolsService()
 
 	// ── 9. Handlers ───────────────────────────────────────────────────────────
@@ -175,6 +190,7 @@ func main() {
 	targetHandler := handler.NewTargetHandler(targetSvc, handlerHelper).WithTargetCap(targetCap)
 	assetHandler := handler.NewAssetHandler(assetSvc, handlerHelper)
 	adminHandler := handler.NewAdminHandler(targetSvc, handlerHelper)
+	programHandler := handler.NewProgramHandler(programSvc, handlerHelper)
 	internalHandler := handler.NewInternalHandler(scopeSvc, assetSvc, handlerHelper)
 	toolsHandler := handler.NewToolsHandler(toolsSvc, handlerHelper)
 
@@ -193,7 +209,9 @@ func main() {
 	// Admin (platform-owner back office, plans/10-ADMIN-PANEL.md §3). RequireAdmin
 	// is the fail-closed second lock: 403 unless the gateway / in-cluster admin
 	// panel stamped X-Is-Admin: true or an admin/owner role in X-User-Roles.
-	adminHandler.RegisterRoutes(e.Group("/v1/admin", handler.RequireAdmin))
+	adminGroup := e.Group("/v1/admin", handler.RequireAdmin)
+	adminHandler.RegisterRoutes(adminGroup)
+	programHandler.RegisterRoutes(adminGroup)
 
 	// Internal (cluster-only) routes — not exposed via Traefik ingress.
 	// Secured by Kubernetes NetworkPolicy; no additional auth middleware.

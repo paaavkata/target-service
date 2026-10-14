@@ -167,6 +167,13 @@ type ProgramEvidence struct {
 	PolicyURL      string `json:"policy_url"      validate:"omitempty,url,max=2048"`
 	ScopeNotes     string `json:"scope_notes"     validate:"max=4000"`
 	AuthorizedDays int    `json:"authorized_days" validate:"omitempty,min=1,max=365"`
+	// Handle links this program authorization to a synced bug-bounty_programs
+	// row (platform, handle) for structured program-mode enforcement (17 §10).
+	// When set, the scope gate resolves the governing program and enforces its
+	// per-asset scope / automation / prohibited-technique policy (default-deny:
+	// an unresolvable or stale policy refuses the scan). When empty, the
+	// authorization keeps the legacy free-text registrable-domain behaviour.
+	Handle string `json:"handle"          validate:"omitempty,max=255"`
 }
 
 // AdminCreateProgramTargetRequest is the body for POST /v1/admin/targets.

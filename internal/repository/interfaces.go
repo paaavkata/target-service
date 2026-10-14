@@ -60,6 +60,18 @@ type AuthorizationRepositoryInterface interface {
 	ExpireActiveAuthorizations(ctx context.Context, targetID int64) (int64, error)
 }
 
+// ProgramRepositoryInterface defines persistence for bug-bounty program policy
+// (17 §10) — the structured program-mode authorization store.
+type ProgramRepositoryInterface interface {
+	// Sync upserts the program on (platform, handle) and atomically replaces its
+	// assets. synced_at/updated_at are set to now(). Returns the stored program.
+	Sync(ctx context.Context, program *model.BugbountyProgram, assets []model.ProgramAsset) (*model.BugbountyProgram, error)
+	// GetByPlatformHandle returns the program for (platform, handle), or ErrNotFound.
+	GetByPlatformHandle(ctx context.Context, platform, handle string) (*model.BugbountyProgram, error)
+	// ListAssets returns every asset (in-scope and excluded) of a program.
+	ListAssets(ctx context.Context, programID string) ([]model.ProgramAsset, error)
+}
+
 // AssetRepositoryInterface defines persistence operations for discovered assets.
 type AssetRepositoryInterface interface {
 	Upsert(ctx context.Context, targetID int64, items []model.AssetUpsertItem) ([]model.Asset, error)

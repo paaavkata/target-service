@@ -56,13 +56,14 @@ func init() {
 type hostResolver func(host string) ([]string, error)
 
 type scopeService struct {
-	targetRepo repository.TargetRepositoryInterface
-	authRepo   repository.AuthorizationRepositoryInterface
-	resolve    hostResolver
+	targetRepo  repository.TargetRepositoryInterface
+	authRepo    repository.AuthorizationRepositoryInterface
+	programRepo repository.ProgramRepositoryInterface // nil ⇒ program mode inactive (legacy behaviour preserved)
+	resolve     hostResolver
 }
 
 // NewScopeService constructs the authorization gate service with the real
-// system resolver.
+// system resolver and no program store (client mode only).
 func NewScopeService(
 	targetRepo repository.TargetRepositoryInterface,
 	authRepo repository.AuthorizationRepositoryInterface,
@@ -81,6 +82,21 @@ func NewScopeServiceWithResolver(
 		targetRepo: targetRepo,
 		authRepo:   authRepo,
 		resolve:    resolve,
+	}
+}
+
+// NewScopeServiceWithProgram is the production constructor: it adds the
+// bug-bounty program store so program-mode authorizations are enforced (17 §10).
+func NewScopeServiceWithProgram(
+	targetRepo repository.TargetRepositoryInterface,
+	authRepo repository.AuthorizationRepositoryInterface,
+	programRepo repository.ProgramRepositoryInterface,
+) ScopeServiceInterface {
+	return &scopeService{
+		targetRepo:  targetRepo,
+		authRepo:    authRepo,
+		programRepo: programRepo,
+		resolve:     net.LookupHost,
 	}
 }
 
@@ -331,6 +347,18 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 
 	// Evaluate each active authorization.
 	for _, auth := range auths {
+		// Program-mode (17 §10): a program-linked authorization is governed by
+		// the structured program policy, not the generic registrable-domain
+		// scope. It is authoritative and default-deny — resolve the program and
+		// return its verdict directly (never fall through to an allow).
+		if linked, program, assets := s.resolveProgramAuth(ctx, &auth); linked {
+			v := programVerdict(program, assets, queryHost, queryIP, req.Phase, time.Now())
+			if v.Authorized {
+				v.AllowedIPs = pinnedIPs
+			}
+			return v, nil
+		}
+
 		switch auth.ScopeKind {
 
 		case model.ScopeKindRegistrableDomain:
@@ -395,4 +423,195 @@ func isSharedInfra(ip net.IP) bool {
 		}
 	}
 	return false
+}
+
+// ----------------------------------------------------------------------------
+// Bug-bounty program mode (17 §10) — a SECOND authorization mode alongside
+// client mode, enforced default-deny from the structured program store.
+// ----------------------------------------------------------------------------
+
+// DefaultProgramStaleWindow is the staleness window used when a program's
+// stale_after_seconds is 0. A policy synced longer ago than this is refused:
+// program scope changes and a stale cache must never authorize a scan.
+const DefaultProgramStaleWindow = 7 * 24 * time.Hour
+
+// programHandle extracts the (platform, handle) link from a program-mode
+// authorization's evidence. An authorization is program-linked only when
+// method=program AND evidence carries a non-empty handle; legacy free-text
+// program authorizations (no handle) keep their registrable-domain behaviour.
+func programHandle(auth *model.Authorization) (platform, handle string, ok bool) {
+	if auth.Method != model.VerificationMethodProgram || auth.Evidence == nil {
+		return "", "", false
+	}
+	h, _ := auth.Evidence["handle"].(string)
+	h = strings.TrimSpace(h)
+	if h == "" {
+		return "", "", false
+	}
+	p, _ := auth.Evidence["platform"].(string)
+	return strings.TrimSpace(p), h, true
+}
+
+// resolveProgramAuth reports whether auth is program-linked and, if so, loads
+// the governing program and its assets. A program-linked authorization whose
+// program row cannot be loaded returns (true, nil, nil) so programVerdict
+// denies with "policy could not be established" (default-deny — a missing
+// policy is a refusal, not a fall-through to the generic scope gate).
+func (s *scopeService) resolveProgramAuth(ctx context.Context, auth *model.Authorization) (bool, *model.BugbountyProgram, []model.ProgramAsset) {
+	platform, handle, ok := programHandle(auth)
+	if !ok || s.programRepo == nil {
+		return false, nil, nil
+	}
+	program, err := s.programRepo.GetByPlatformHandle(ctx, platform, handle)
+	if err != nil {
+		return true, nil, nil
+	}
+	assets, err := s.programRepo.ListAssets(ctx, program.ID)
+	if err != nil {
+		return true, nil, nil
+	}
+	return true, program, assets
+}
+
+// programVerdict is the pure (DB/DNS-free), table-testable program-mode gate.
+// Default-deny: it ALLOWS only when the program policy is established, active,
+// not stale, the host/IP matches an in-scope asset and no excluded asset,
+// automation is permitted, and the phase is not a prohibited technique.
+func programVerdict(p *model.BugbountyProgram, assets []model.ProgramAsset, host, ip, phase string, now time.Time) *model.ScopeCheckResponse {
+	if p == nil {
+		return denyResult("program policy could not be established — do not run (17 §10)")
+	}
+	if p.Status != model.ProgramStatusActive {
+		return denyResult(fmt.Sprintf("bug-bounty program %s/%s is %q — do not run (17 §10)", p.Platform, p.Handle, p.Status))
+	}
+	stale := DefaultProgramStaleWindow
+	if p.StaleAfterSeconds > 0 {
+		stale = time.Duration(p.StaleAfterSeconds) * time.Second
+	}
+	if p.SyncedAt.IsZero() || now.Sub(p.SyncedAt) > stale {
+		return denyResult(fmt.Sprintf("bug-bounty program %s/%s policy is stale (last synced %s, window %s) — do not run (17 §10)", p.Platform, p.Handle, p.SyncedAt.Format(time.RFC3339), stale))
+	}
+
+	host = strings.ToLower(strings.TrimSpace(host))
+	ip = strings.TrimSpace(ip)
+
+	// Exclusions win: an explicitly out-of-scope asset refuses the request even
+	// if an in-scope wildcard would otherwise match it.
+	for i := range assets {
+		if !assets[i].InScope && programAssetMatches(&assets[i], host, ip) {
+			return denyResult(fmt.Sprintf("host/IP matches an EXCLUDED asset %q of program %s/%s — refused (17 §10)", assets[i].Identifier, p.Platform, p.Handle))
+		}
+	}
+	// Must match at least one explicitly in-scope asset.
+	matched := false
+	for i := range assets {
+		if assets[i].InScope && programAssetMatches(&assets[i], host, ip) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return denyResult(fmt.Sprintf("host/IP is not within any in-scope asset of program %s/%s — refused (17 §10)", p.Platform, p.Handle))
+	}
+	if !p.AutomationAllowed {
+		return denyResult(fmt.Sprintf("automated scanning is not permitted by program %s/%s — refused (17 §10)", p.Platform, p.Handle))
+	}
+	if tech := prohibitedPhaseTechnique(phase, p.ProhibitedTechniques); tech != "" {
+		return denyResult(fmt.Sprintf("phase %q maps to prohibited technique %q of program %s/%s — filtered (17 §10)", phase, tech, p.Platform, p.Handle))
+	}
+	return allowResult(fmt.Sprintf("host/IP is in scope for bug-bounty program %s/%s, automation permitted, phase %q allowed (17 §10)", p.Platform, p.Handle, phase))
+}
+
+// programAssetMatches reports whether a scope asset matches the queried host/IP.
+// Matching is per asset_type and honours wildcards.
+func programAssetMatches(a *model.ProgramAsset, host, ip string) bool {
+	id := strings.ToLower(strings.TrimSpace(a.Identifier))
+	switch a.AssetType {
+	case model.ProgramAssetTypeDomain:
+		return host != "" && host == id
+	case model.ProgramAssetTypeWildcard:
+		base := strings.TrimPrefix(id, "*.")
+		return host != "" && (host == base || strings.HasSuffix(host, "."+base))
+	case model.ProgramAssetTypeURL:
+		return host != "" && host == urlHost(id)
+	case model.ProgramAssetTypeIP:
+		return ip != "" && ip == id
+	case model.ProgramAssetTypeCIDR:
+		if ip == "" {
+			return false
+		}
+		parsed := net.ParseIP(ip)
+		_, network, err := net.ParseCIDR(id)
+		return err == nil && parsed != nil && network.Contains(parsed)
+	default: // other
+		return host != "" && host == id
+	}
+}
+
+// urlHost extracts the host from a URL identifier that may or may not carry a
+// scheme or path (e.g. "https://example.com/app" or "example.com/app").
+func urlHost(id string) string {
+	if i := strings.Index(id, "://"); i >= 0 {
+		id = id[i+3:]
+	}
+	if i := strings.IndexAny(id, "/?#"); i >= 0 {
+		id = id[:i]
+	}
+	if i := strings.Index(id, "@"); i >= 0 { // strip userinfo
+		id = id[i+1:]
+	}
+	if h, _, err := net.SplitHostPort(id); err == nil {
+		return h
+	}
+	return id
+}
+
+// phaseTechnique maps a scan phase to the canonical technique token it performs.
+// ponytail: this small table IS the calibration knob between our phase names
+// and a program's prohibited-technique vocabulary — extend it as phases or
+// platform wording evolve. A phase with no entry performs no restricted
+// technique (passive recon: osint, web_recon), so prohibited-techniques never
+// blocks it (the other gate conditions still apply).
+var phaseTechnique = map[string]string{
+	"cred":              "brute_force",
+	"auth_register":     "account_creation",
+	"auth_account_mgmt": "account_creation",
+	"network":           "network_scanning",
+	"web_vuln":          "automated_scanning",
+	"auth_crawl":        "automated_scanning",
+	"agent":             "automated_scanning",
+}
+
+// prohibitedPhaseTechnique returns the technique token when the phase's
+// technique is in the program's prohibited list (both sides normalized), else "".
+func prohibitedPhaseTechnique(phase string, prohibited []string) string {
+	tech := phaseTechnique[phase]
+	if tech == "" {
+		return ""
+	}
+	for _, p := range normalizeTechniques(prohibited) {
+		if p == tech {
+			return tech
+		}
+	}
+	return ""
+}
+
+// normalizeTechniques lowercases and canonicalizes technique tokens so platform
+// wording ("Brute Force", "brute-force") matches our tokens ("brute_force").
+func normalizeTechniques(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if n := normalizeTechnique(s); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func normalizeTechnique(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, "-", "_")
+	s = strings.ReplaceAll(s, " ", "_")
+	return s
 }

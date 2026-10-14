@@ -243,13 +243,19 @@ func (s *targetService) getAny(ctx context.Context, uid string) (*model.Target, 
 // programEvidence is the JSON stored in authorizations.evidence for a program
 // target — the program IS the authorization record.
 func programEvidence(p model.ProgramEvidence) map[string]interface{} {
-	return map[string]interface{}{
+	ev := map[string]interface{}{
 		"platform":    p.Platform,
 		"name":        strings.TrimSpace(p.Name),
 		"url":         strings.TrimSpace(p.URL),
 		"policy_url":  strings.TrimSpace(p.PolicyURL),
 		"scope_notes": strings.TrimSpace(p.ScopeNotes),
 	}
+	// A non-empty handle links this authorization to a synced bug-bounty_programs
+	// row for structured program-mode enforcement in the scope gate (17 §10).
+	if h := strings.TrimSpace(p.Handle); h != "" {
+		ev["handle"] = h
+	}
+	return ev
 }
 
 func targetToAdminDTO(t *model.Target, auth *model.Authorization, assets []model.Asset) model.TargetAdminDTO {
