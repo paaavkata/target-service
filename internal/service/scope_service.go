@@ -123,7 +123,12 @@ func allowResult(reason string) *model.ScopeCheckResponse {
 //     – scope_kind=ip_range: the queried IP must fall within the authorized CIDR.
 //  4. For INTRUSIVE requests (req.Intrusive true or absent), reject if the
 //     host/IP resolves to a known shared-infra range (even if it passes the
-//     registrable-domain check). Non-intrusive requests may target a CDN edge.
+//     registrable-domain check) — unless the request is application-layer
+//     (req.Layer == "application") and matches a registrable-domain scope:
+//     HTTP/TLS to the customer's own hostname through a CDN is authorized
+//     and pinned to the edge IPs. Non-intrusive requests may target a CDN edge.
+//     A directly-supplied shared-infra IP is denied for intrusive testing at
+//     every layer (ip_range scope never gets the relaxation).
 //  5. Deny by default — any ambiguity is a "not authorized" (conservative gate).
 //
 // Reasons returned by CheckVerified (stable tokens; scan-service logs them).
@@ -299,7 +304,15 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 	// edge IPs it resolved to. Reserved/private/metadata answers stay denied
 	// regardless (ResolveStrict / IsDeniedIP below). A request that does not
 	// state its intrusiveness is treated as intrusive.
+	//
+	// The shared-infra exclusion is LAYER-aware: it protects co-tenants from
+	// packets addressed to a shared edge IP, so it applies to network-layer
+	// intrusive testing. An application-layer request (HTTP/TLS routed by
+	// Host/SNI to the customer's own origin) against a host in an active
+	// registrable-domain scope is allowed through a CDN and pinned to the
+	// edge IPs. Absent/unrecognized layer is network (conservative default).
 	intrusive := req.IsIntrusive()
+	sharedInfraDenied := intrusive && req.IsNetworkLayer()
 
 	// Shared-infra + reserved check for a directly-supplied IP.
 	if queryIP != "" {
@@ -310,6 +323,10 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 		if denied, reason := safedial.IsDeniedIP(ip); denied {
 			return denyResult(fmt.Sprintf("IP %s is a private/reserved/internal address — refused (SSRF guard, 06 §3): %s", queryIP, reason)), nil
 		}
+		// An IP-scoped query can only be satisfied by an ip_range scope, and the
+		// layer relaxation never applies there: intrusive testing of a raw
+		// shared-infra IP is denied for every layer (the relaxation is for
+		// registrable-domain hosts only — see the host loop below).
 		if intrusive && isSharedInfra(ip) {
 			return denyResult(fmt.Sprintf("IP %s belongs to a known shared-infrastructure range — intrusive testing is not permitted (06 §3)", queryIP)), nil
 		}
@@ -338,8 +355,8 @@ func (s *scopeService) CheckScope(ctx context.Context, req *model.ScopeCheckRequ
 			return denyResult(fmt.Sprintf("host %q could not be resolved (%v) — refused (fail-closed)", queryHost, err)), nil
 		}
 		for _, ip := range resolvedIPs {
-			if intrusive && isSharedInfra(ip) {
-				return denyResult(fmt.Sprintf("host %q resolves to a shared-infrastructure IP (%s) — intrusive testing is not permitted (06 §3)", queryHost, ip.String())), nil
+			if sharedInfraDenied && isSharedInfra(ip) {
+				return denyResult(fmt.Sprintf("host %q resolves to a shared-infrastructure IP (%s) — network-layer intrusive testing is not permitted (06 §3)", queryHost, ip.String())), nil
 			}
 			pinnedIPs = append(pinnedIPs, ip.String())
 		}

@@ -211,6 +211,13 @@ type ScopeCheckRequest struct {
 	// CDN-fronted host. Reserved/private/metadata IPs are refused either way.
 	// Absent means intrusive: an old caller never gains CDN access by omission.
 	Intrusive *bool `json:"intrusive,omitempty"`
+	// Layer classifies the intrusive phase: "network" (packets addressed to an
+	// IP: port scan, service fingerprint, CVE correlation, cred-resilience) or
+	// "application" (HTTP/TLS requests routed by Host/SNI to the target's own
+	// origin: web vuln, web recon, TLS audit, CMS scan). The shared-infra (CDN)
+	// exclusion applies only to network-layer testing (06 §3). Absent or
+	// unrecognized means network: an old caller never gains CDN access by omission.
+	Layer string `json:"layer,omitempty"`
 	// AuthScanAuthorized is the per-scan authenticated-scanning attestation
 	// (15 §6): the customer attests that automated account creation and
 	// account-management testing against their app is authorized. It is
@@ -227,6 +234,19 @@ type ScopeCheckRequest struct {
 // that does not say is treated as intrusive (fail closed).
 func (r *ScopeCheckRequest) IsIntrusive() bool {
 	return r.Intrusive == nil || *r.Intrusive
+}
+
+// Phase layer values carried on ScopeCheckRequest.Layer.
+const (
+	LayerNetwork     = "network"
+	LayerApplication = "application"
+)
+
+// IsNetworkLayer reports whether the request is network-layer for the
+// shared-infrastructure decision. Only an explicit "application" is
+// application-layer; empty or unrecognized values are network (fail closed).
+func (r *ScopeCheckRequest) IsNetworkLayer() bool {
+	return r.Layer != LayerApplication
 }
 
 // ----------------------------------------------------------------------------

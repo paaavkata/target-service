@@ -808,3 +808,66 @@ func TestScopeCheck_NonAuthPhase_Unaffected(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, res.Authorized, "non-auth phase must not require the auth attestation")
 }
+
+// ---------------------------------------------------------------------------
+// Layer-aware shared-infrastructure exclusion (06 §3; fix-shared-infra-scope)
+// ---------------------------------------------------------------------------
+
+// The shared-infra denial applies to NETWORK-layer intrusive testing only. An
+// application-layer intrusive task against a CDN-fronted host inside an
+// active registrable-domain scope is authorized and pinned to the edge IPs;
+// out-of-scope hosts, private answers and absent layer stay denied.
+func TestScopeCheck_LayerAware_SharedInfra(t *testing.T) {
+	cdn := []string{"104.21.32.1", "172.67.1.1"}
+	cases := []struct {
+		name      string
+		host      string
+		layer     string
+		answer    []string
+		wantAllow bool
+		wantIPs   []string
+		reasonHas string
+	}{
+		{"port-scan vs CDN (network layer) denied", "myapp.test", "network", cdn, false, nil, "shared-infrastructure"},
+		{"web-vuln vs CDN in scope allowed + pinned", "www.myapp.test", "application", cdn, true, cdn, "registrable-domain"},
+		{"web-vuln vs out-of-scope host denied", "other.test", "application", cdn, false, nil, "not within any authorized scope"},
+		{"web-vuln resolving to private IP denied", "myapp.test", "application", []string{"104.21.32.1", "10.0.0.5"}, false, nil, "private/reserved"},
+		{"missing layer treated as network", "myapp.test", "", cdn, false, nil, "shared-infrastructure"},
+		{"unknown layer treated as network", "myapp.test", "l7", cdn, false, nil, "shared-infrastructure"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			target := verifiedTarget("uid-1", model.TargetKindDomain, "myapp.test", "myapp.test")
+			r := func(string) ([]string, error) { return tc.answer, nil }
+			svc := makeSvcWithResolver(target, []model.Authorization{activeAuth(model.ScopeKindRegistrableDomain, "myapp.test")}, r)
+			res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+				TargetUID: "uid-1", Host: tc.host, Phase: "web_vuln", Intrusive: boolPtr(true), Layer: tc.layer,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantAllow, res.Authorized, res.Reason)
+			assert.Contains(t, res.Reason, tc.reasonHas)
+			if tc.wantAllow {
+				assert.ElementsMatch(t, tc.wantIPs, res.AllowedIPs)
+			} else {
+				assert.Empty(t, res.AllowedIPs)
+			}
+		})
+	}
+}
+
+// The layer relaxation never reaches ip_range scope: an intrusive request for
+// a raw shared-infra IP is denied at every layer (network IP testing still
+// needs registry-confirmed ownership of non-shared space).
+func TestScopeCheck_LayerAware_IPRangeNeverRelaxed(t *testing.T) {
+	enableIPTargets(t)
+	target := verifiedTarget("uid-1", model.TargetKindCIDR, "104.16.0.0/13", "")
+	svc := makeSvc(target, []model.Authorization{activeAuth(model.ScopeKindIPRange, "104.16.0.0/13")})
+	for _, layer := range []string{"network", "application", ""} {
+		res, err := svc.CheckScope(context.Background(), &model.ScopeCheckRequest{
+			TargetUID: "uid-1", IP: "104.16.1.1", Phase: "web_vuln", Intrusive: boolPtr(true), Layer: layer,
+		})
+		require.NoError(t, err)
+		assert.False(t, res.Authorized, "layer=%q: %s", layer, res.Reason)
+		assert.Contains(t, res.Reason, "shared-infrastructure")
+	}
+}
