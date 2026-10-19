@@ -104,8 +104,8 @@ github.com/paaavkata/go-events v0.2.0 h1:vcG/qGxIez8Ab8UJ3Ysq6olbhCzyv59+yfSW5S9
 github.com/paaavkata/go-events v0.2.0/go.mod h1:bXYVtGEbaE/tGaYx6LfnTuQ6Gc9ttmAKgiW0Tws8GJk=
 github.com/paaavkata/go-logger v0.1.2 h1:xc62Xdv8wuZ3+ZasVIQsl6HDRHQLcXeY3F3Lm6G/AOs=
 github.com/paaavkata/go-logger v0.1.2/go.mod h1:QwMH8+Gzk5lhi/jHleIS89XtfJkBVQuQqwzlEkDK39U=
-github.com/paaavkata/go-nats v0.5.0 h1:OmPebE6eHrzFeploRSk2XR+aK+W4YkjFdOdeg1ZYfK0=
-github.com/paaavkata/go-nats v0.5.0/go.mod h1:u0ryl1jnFUMi7O3KOQFn8ztze6s4JQzUlpM1vIerIQI=
+github.com/paaavkata/go-nats v0.5.1 h1:LSd6mbeS107u6nl+h7haUYBb+xiHpn7nf+rUPVZYUVw=
+github.com/paaavkata/go-nats v0.5.1/go.mod h1:u0ryl1jnFUMi7O3KOQFn8ztze6s4JQzUlpM1vIerIQI=
 github.com/paaavkata/go-safedial v0.1.0 h1:/fnOoMrqZAOGAmT9mFSMROWa5XOOA1q7TukGJ2GJzcg=
 github.com/paaavkata/go-safedial v0.1.0/go.mod h1:+qek10ujpRuTohwUnMh4Am9N4kIRpfSWUJynbQpgl54=
 github.com/paaavkata/go-server v0.3.1 h1:hiwFU/z9ONlFsmQtS+r0jW9tgGXi51VBP9JfxIitUKM=

@@ -10,7 +10,7 @@ require (
 	github.com/paaavkata/go-db v0.1.1
 	github.com/paaavkata/go-events v0.2.0
 	github.com/paaavkata/go-logger v0.1.2
-	github.com/paaavkata/go-nats v0.5.0
+	github.com/paaavkata/go-nats v0.5.1
 	github.com/paaavkata/go-safedial v0.1.0
 	github.com/paaavkata/go-server v0.3.1
 	github.com/spf13/viper v1.19.0
