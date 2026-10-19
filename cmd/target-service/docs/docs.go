@@ -212,6 +212,90 @@ const docTemplate = `{
                 "x-required-permission": "internal.call"
             }
         },
+        "/v1/admin/programs/sync": {
+            "post": {
+                "description": "Pulls a program's structured scope from its platform (platform+handle) and upserts it (and its assets) into the program store for program-mode scope enforcement (17 §10). The platform APIs do not expose automation/rate/prohibited-technique machine-readably, so those are the admin's attestation in the body (absent ⇒ default-deny). Returns 503 \"policy source unavailable\" when the platform credentials are not configured.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Sync a bug-bounty program policy (ADMIN)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Must be \\",
+                        "name": "X-Is-Admin",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Program sync payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SyncProgramRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/model.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/model.ProgramDTO"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "admin only",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "502": {
+                        "description": "no connector / platform error",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    },
+                    "503": {
+                        "description": "policy source unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/model.Response"
+                        }
+                    }
+                },
+                "x-required-permission": "program.manage"
+            }
+        },
         "/v1/admin/stats": {
             "get": {
                 "description": "` + "`" + `{total, by_status: {…}, by_source: {…}}` + "`" + ` across all users.",
@@ -1568,15 +1652,13 @@ const docTemplate = `{
                 "by_source": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer",
-                        "format": "int64"
+                        "type": "integer"
                     }
                 },
                 "by_status": {
                     "type": "object",
                     "additionalProperties": {
-                        "type": "integer",
-                        "format": "int64"
+                        "type": "integer"
                     }
                 },
                 "total": {
@@ -1804,6 +1886,79 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ProgramAsset": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "identifier": {
+                    "type": "string"
+                },
+                "in_scope": {
+                    "type": "boolean"
+                },
+                "program_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.ProgramDTO": {
+            "type": "object",
+            "properties": {
+                "assets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ProgramAsset"
+                    }
+                },
+                "automation_allowed": {
+                    "type": "boolean"
+                },
+                "handle": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "platform": {
+                    "type": "string"
+                },
+                "policy_url": {
+                    "type": "string"
+                },
+                "prohibited_techniques": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "rate_limit_rps": {
+                    "type": "integer"
+                },
+                "safe_harbor": {
+                    "type": "boolean"
+                },
+                "stale_after_seconds": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "synced_at": {
+                    "type": "string"
+                }
+            }
+        },
         "model.ProgramEvidence": {
             "type": "object",
             "required": [
@@ -1816,6 +1971,11 @@ const docTemplate = `{
                     "type": "integer",
                     "maximum": 365,
                     "minimum": 1
+                },
+                "handle": {
+                    "description": "Handle links this program authorization to a synced bug-bounty_programs\nrow (platform, handle) for structured program-mode enforcement (17 §10).\nWhen set, the scope gate resolves the governing program and enforces its\nper-asset scope / automation / prohibited-technique policy (default-deny:\nan unresolvable or stale policy refuses the scan). When empty, the\nauthorization keeps the legacy free-text registrable-domain behaviour.",
+                    "type": "string",
+                    "maxLength": 255
                 },
                 "name": {
                     "type": "string",
@@ -1905,6 +2065,10 @@ const docTemplate = `{
                 "ip": {
                     "type": "string"
                 },
+                "layer": {
+                    "description": "Layer classifies the intrusive phase: \"network\" (packets addressed to an\nIP: port scan, service fingerprint, CVE correlation, cred-resilience) or\n\"application\" (HTTP/TLS requests routed by Host/SNI to the target's own\norigin: web vuln, web recon, TLS audit, CMS scan). The shared-infra (CDN)\nexclusion applies only to network-layer testing (06 §3). Absent or\nunrecognized means network: an old caller never gains CDN access by omission.",
+                    "type": "string"
+                },
                 "phase": {
                     "type": "string"
                 },
@@ -1950,6 +2114,54 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.HeaderResult"
                     }
+                }
+            }
+        },
+        "model.SyncProgramRequest": {
+            "type": "object",
+            "required": [
+                "handle",
+                "platform"
+            ],
+            "properties": {
+                "automation_allowed": {
+                    "type": "boolean"
+                },
+                "handle": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                },
+                "platform": {
+                    "type": "string",
+                    "enum": [
+                        "hackerone",
+                        "bugcrowd",
+                        "intigriti",
+                        "yeswehack",
+                        "other"
+                    ]
+                },
+                "prohibited_techniques": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "rate_limit_rps": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "stale_after_seconds": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "paused"
+                    ]
                 }
             }
         },

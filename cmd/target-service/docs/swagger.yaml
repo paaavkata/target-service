@@ -58,12 +58,10 @@ definitions:
     properties:
       by_source:
         additionalProperties:
-          format: int64
           type: integer
         type: object
       by_status:
         additionalProperties:
-          format: int64
           type: integer
         type: object
       total:
@@ -219,12 +217,70 @@ definitions:
       value:
         type: string
     type: object
+  model.ProgramAsset:
+    properties:
+      asset_type:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      identifier:
+        type: string
+      in_scope:
+        type: boolean
+      program_id:
+        type: string
+    type: object
+  model.ProgramDTO:
+    properties:
+      assets:
+        items:
+          $ref: '#/definitions/model.ProgramAsset'
+        type: array
+      automation_allowed:
+        type: boolean
+      handle:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      platform:
+        type: string
+      policy_url:
+        type: string
+      prohibited_techniques:
+        items:
+          type: string
+        type: array
+      rate_limit_rps:
+        type: integer
+      safe_harbor:
+        type: boolean
+      stale_after_seconds:
+        type: integer
+      status:
+        type: string
+      synced_at:
+        type: string
+    type: object
   model.ProgramEvidence:
     properties:
       authorized_days:
         maximum: 365
         minimum: 1
         type: integer
+      handle:
+        description: |-
+          Handle links this program authorization to a synced bug-bounty_programs
+          row (platform, handle) for structured program-mode enforcement (17 §10).
+          When set, the scope gate resolves the governing program and enforces its
+          per-asset scope / automation / prohibited-technique policy (default-deny:
+          an unresolvable or stale policy refuses the scan). When empty, the
+          authorization keeps the legacy free-text registrable-domain behaviour.
+        maxLength: 255
+        type: string
       name:
         maxLength: 255
         minLength: 1
@@ -303,6 +359,15 @@ definitions:
         type: boolean
       ip:
         type: string
+      layer:
+        description: |-
+          Layer classifies the intrusive phase: "network" (packets addressed to an
+          IP: port scan, service fingerprint, CVE correlation, cred-resilience) or
+          "application" (HTTP/TLS requests routed by Host/SNI to the target's own
+          origin: web vuln, web recon, TLS audit, CMS scan). The shared-infra (CDN)
+          exclusion applies only to network-layer testing (06 §3). Absent or
+          unrecognized means network: an old caller never gains CDN access by omission.
+        type: string
       phase:
         type: string
       target_uid:
@@ -336,6 +401,41 @@ definitions:
         items:
           $ref: '#/definitions/model.HeaderResult'
         type: array
+    type: object
+  model.SyncProgramRequest:
+    properties:
+      automation_allowed:
+        type: boolean
+      handle:
+        maxLength: 255
+        minLength: 1
+        type: string
+      platform:
+        enum:
+        - hackerone
+        - bugcrowd
+        - intigriti
+        - yeswehack
+        - other
+        type: string
+      prohibited_techniques:
+        items:
+          type: string
+        type: array
+      rate_limit_rps:
+        minimum: 1
+        type: integer
+      stale_after_seconds:
+        minimum: 0
+        type: integer
+      status:
+        enum:
+        - active
+        - paused
+        type: string
+    required:
+    - handle
+    - platform
     type: object
   model.TLSCertificateInfo:
     properties:
@@ -693,6 +793,64 @@ paths:
       tags:
       - internal
       x-required-permission: internal.call
+  /v1/admin/programs/sync:
+    post:
+      consumes:
+      - application/json
+      description: Pulls a program's structured scope from its platform (platform+handle)
+        and upserts it (and its assets) into the program store for program-mode scope
+        enforcement (17 §10). The platform APIs do not expose automation/rate/prohibited-technique
+        machine-readably, so those are the admin's attestation in the body (absent
+        ⇒ default-deny). Returns 503 "policy source unavailable" when the platform
+        credentials are not configured.
+      parameters:
+      - description: Must be \
+        in: header
+        name: X-Is-Admin
+        required: true
+        type: string
+      - description: Program sync payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.SyncProgramRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/model.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.ProgramDTO'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.Response'
+        "403":
+          description: admin only
+          schema:
+            $ref: '#/definitions/model.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.Response'
+        "502":
+          description: no connector / platform error
+          schema:
+            $ref: '#/definitions/model.Response'
+        "503":
+          description: policy source unavailable
+          schema:
+            $ref: '#/definitions/model.Response'
+      summary: Sync a bug-bounty program policy (ADMIN)
+      tags:
+      - admin
+      x-required-permission: program.manage
   /v1/admin/stats:
     get:
       description: '`{total, by_status: {…}, by_source: {…}}` across all users.'
